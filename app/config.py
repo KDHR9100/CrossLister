@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     chroma_persist_dir: Path = BASE_DIR / "data" / "chroma"
     embedding_mode: EmbeddingMode = EmbeddingMode.LOCAL
     embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
-    embedding_local_model_path: str = "/home/huajuanx/models/models--Qwen--Qwen3-Embedding-0.6B/snapshots/97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+    embedding_local_model_path: str = "Qwen/Qwen3-Embedding-0.6B"
     embedding_api_base: str = "http://localhost:8000/v1"
     embedding_api_key: str = "EMPTY"
     rag_top_k: int = 4
