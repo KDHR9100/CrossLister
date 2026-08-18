@@ -1,0 +1,100 @@
+"""Application configuration backed by Pydantic Settings.
+
+All settings can be overridden via environment variables or a local `.env`
+file (see `.env.example`).
+"""
+
+from enum import Enum
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Repository root (parent of the `app/` package).
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+class VisionMode(str, Enum):
+    """Vision model invocation mode.
+
+    local: self-hosted vLLM server exposing the OpenAI-compatible API.
+    api:   any cloud endpoint compatible with the OpenAI Vision protocol.
+    mock:  deterministic stub used for development and tests.
+    """
+
+    LOCAL = "local"
+    API = "api"
+    MOCK = "mock"
+
+
+class EmbeddingMode(str, Enum):
+    """Embedding generation mode for the RAG index.
+
+    local: load a local Hugging Face model via sentence_transformers (default).
+    api:   kept for backward compatibility, now also routes to local model.
+    mock:  deterministic offline token-hashing embedder for dev and tests.
+    """
+
+    LOCAL = "local"
+    API = "api"
+    MOCK = "mock"
+
+
+class LLMMode(str, Enum):
+    """Text LLM invocation mode for generation / compliance / translation.
+
+    api:  call an OpenAI-compatible chat-completions endpoint.
+    mock: deterministic stub used for development and tests.
+    """
+
+    API = "api"
+    MOCK = "mock"
+
+
+class Settings(BaseSettings):
+    """Global application settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # -- Application ---------------------------------------------------
+    app_name: str = "CrossLister"
+    app_version: str = "0.1.0"
+    debug: bool = False
+
+    # -- Vision model --------------------------------------------------
+    vision_mode: VisionMode = VisionMode.MOCK
+    vision_api_base: str = "http://localhost:8000/v1"
+    vision_api_key: str = "EMPTY"
+    vision_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"
+    vision_max_images: int = 5
+    vision_timeout_s: float = 120.0
+
+    # -- Text LLM (listing generation / compliance check) --------------
+    llm_mode: LLMMode = LLMMode.MOCK
+    llm_api_base: str = "http://localhost:8000/v1"
+    llm_api_key: str = "EMPTY"
+    llm_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    llm_timeout_s: float = 120.0
+
+    # -- RAG -----------------------------------------------------------
+    platform_rules_dir: Path = BASE_DIR / "data" / "platform_rules"
+    chroma_persist_dir: Path = BASE_DIR / "data" / "chroma"
+    embedding_mode: EmbeddingMode = EmbeddingMode.LOCAL
+    embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
+    embedding_local_model_path: str = "/home/huajuanx/models/models--Qwen--Qwen3-Embedding-0.6B/snapshots/97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+    embedding_api_base: str = "http://localhost:8000/v1"
+    embedding_api_key: str = "EMPTY"
+    rag_top_k: int = 4
+
+    # -- Compliance guardrails ------------------------------------------
+    max_compliance_retries: int = 3
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Return a cached Settings instance."""
+    return Settings()

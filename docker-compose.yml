@@ -1,0 +1,43 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - CHROMA_PERSIST_DIR=/app/data/chroma
+    volumes:
+      # ChromaDB runs embedded inside the API process and persists here.
+      - ./data:/app/data
+
+  # Self-hosted models (reserved). Require NVIDIA GPU + nvidia-container-toolkit.
+  # Uncomment after preparing the GPU environment, then point the .env
+  # *_API_BASE variables at http://<host>:8000/v1 / http://<host>:8001/v1.
+  #
+  # vllm-vision:
+  #   image: vllm/vllm-openai:latest
+  #   runtime: nvidia
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ~/.cache/huggingface:/root/.cache/huggingface
+  #   environment:
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #   command: >
+  #     --model Qwen/Qwen2.5-VL-7B-Instruct
+  #     --served-model-name Qwen/Qwen2.5-VL-7B-Instruct
+  #     --limit-mm-per-prompt image=5
+  #
+  # vllm-text:
+  #   image: vllm/vllm-openai:latest
+  #   runtime: nvidia
+  #   ports:
+  #     - "8001:8000"
+  #   volumes:
+  #     - ~/.cache/huggingface:/root/.cache/huggingface
+  #   environment:
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #   command: >
+  #     --model Qwen/Qwen2.5-7B-Instruct
+  #     --served-model-name Qwen/Qwen2.5-7B-Instruct
