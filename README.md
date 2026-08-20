@@ -13,7 +13,7 @@
 ## ✨ 核心特性
 
 - **多模态理解**：用 Qwen2.5-VL-7B 从 1–5 张商品图中提取类目、颜色、材质、卖点与使用场景。
-- **平台规则 RAG**：内置 Amazon / Shopee / Temu 规则文档，用 bge-m3 向量化后按平台
+- **平台规则 RAG**：内置 Amazon / Shopee / Temu 规则文档，用 Qwen3-Embedding-0.6B 向量化后按平台
   分 collection 存入 ChromaDB，按商品语义检索最相关的规则条目喂给生成模型。
 - **自研合规护栏**：先做确定性的分平台违禁词扫描，再由 LLM 做语义复核；
   不合格则带着违规点**回到生成节点重写，最多循环 3 次**。
@@ -35,7 +35,7 @@ flowchart LR
 
     subgraph Graph[LangGraph StateGraph]
         V[vision 节点<br/>Qwen2.5-VL-7B<br/>提取卖点]
-        R[rag 节点<br/>bge-m3 + ChromaDB<br/>检索平台规则]
+        R[rag 节点<br/>Qwen3-Embedding-0.6B + ChromaDB<br/>检索平台规则]
         G[generate 节点<br/>Qwen2.5-7B<br/>起草 Listing]
         C{guardrails 节点<br/>违禁词 + LLM 复核}
         T[translate 节点<br/>多语言本地化]
@@ -59,7 +59,7 @@ flowchart LR
 | 编排 | LangGraph `StateGraph` | 节点间通过 `AgentState` 传递，合规失败条件回边 |
 | 视觉 | OpenAI Vision 协议 | vLLM / 云端 API 共用一条代码路径 |
 | 检索 | ChromaDB（嵌入式持久化） | 每平台一个 collection，按规则条目分 chunk |
-| Embedding | bge-m3（OpenAI 兼容 `/embeddings`） | 或离线 mock embedder |
+| Embedding | Qwen3-Embedding-0.6B（OpenAI 兼容 `/embeddings`） | 或离线 mock embedder |
 | 服务 | FastAPI + Pydantic v2 | multipart 上传，结构化校验 |
 | 日志 | structlog | JSON 结构化输出 |
 
@@ -126,7 +126,7 @@ curl -X POST http://localhost:8080/api/v1/listing/generate \
 | --- | --- | --- | --- |
 | 视觉理解 | `Qwen/Qwen2.5-VL-7B-Instruct` | `VISION_MODE` | `VISION_API_BASE` / `VISION_API_KEY` |
 | 文本生成 / 合规 / 翻译 | `Qwen/Qwen2.5-7B-Instruct` | `LLM_MODE` | `LLM_API_BASE` / `LLM_API_KEY` |
-| 向量嵌入 | `BAAI/bge-m3` | `EMBEDDING_MODE` | `EMBEDDING_API_BASE` / `EMBEDDING_API_KEY` |
+| 向量嵌入 | `Qwen/Qwen3-Embedding-0.6B` | `EMBEDDING_MODE` | `EMBEDDING_API_BASE` / `EMBEDDING_API_KEY` |
 
 每种模式的取值：
 
@@ -211,3 +211,4 @@ CrossLister/
 ## 📄 License
 
 本项目基于 [Apache License 2.0](./LICENSE) 开源。欢迎提 Issue 与 PR。
+
