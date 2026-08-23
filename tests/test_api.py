@@ -85,13 +85,14 @@ def test_generate_rejects_too_many_images() -> None:
     assert resp.status_code == 400
 
 
-def test_generate_rejects_invalid_extra_info() -> None:
+def test_generate_accepts_natural_language_extra_info() -> None:
+    """Non-JSON extra_info is now treated as natural language, not rejected."""
     resp = client.post(
         "/api/v1/listing/generate",
         files=[("images", ("product.png", _PNG_1X1, "image/png"))],
         data={"category": "storage organizer", "extra_info": "not-json"},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 200
 
 
 def test_generate_requires_images() -> None:

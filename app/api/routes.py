@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -47,6 +49,38 @@ class SupportedLanguages(BaseModel):
     )
 
 
+class BatchProductItem(BaseModel):
+    """A single product in a batch generation request."""
+    product_index: int = Field(description="0-based product index")
+    images_base64: list[str] = Field(
+        description="List of base64-encoded image data (with or without data URI prefix)"
+    )
+    category: str = Field(description="Product category")
+    platform: str = Field(default="amazon", description="Target platform")
+    target_lang: str = Field(default="en", description="Target language code")
+    extra_info: str | None = Field(
+        default=None,
+        description="Optional extra info: JSON string or natural language text",
+    )
+
+
+class BatchGenerateRequest(BaseModel):
+    """Request body for batch listing generation."""
+    products: list[BatchProductItem]
+
+
+class BatchProductResult(BaseModel):
+    """Result for a single product in a batch response."""
+    product_index: int
+    listing: ListingResponse | None = None
+    error: str | None = None
+
+
+class BatchGenerateResponse(BaseModel):
+    """Response for batch listing generation."""
+    results: list[BatchProductResult]
+
+
 # --------------- Constants ---------------
 
 SUPPORTED_LANGUAGES = [
@@ -80,6 +114,39 @@ PLATFORM_INFO = {
 }
 
 
+# --------------- Helpers ---------------
+
+def _parse_extra_info(extra_info: str | None) -> dict | None:
+    """Parse extra_info: try JSON first, fall back to natural language.
+
+    Returns:
+        A dict suitable for passing to the pipeline. If the input is not
+        valid JSON, it is wrapped under ``natural_language_description``.
+    """
+    if not extra_info:
+        return None
+    text = extra_info.strip()
+    if not text:
+        return None
+    # Try JSON first
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        # JSON but not an object — wrap it
+        return {"natural_language_description": text}
+    except (json.JSONDecodeError, ValueError):
+        # Not JSON — treat as natural language
+        return {"natural_language_description": text}
+
+
+def _decode_base64_image(data: str) -> bytes:
+    """Decode a base64 image, stripping data URI prefix if present."""
+    if "," in data and data.startswith("data:"):
+        data = data.split(",", 1)[1]
+    return base64.b64decode(data)
+
+
 # --------------- Routes ---------------
 
 @router.get("/platforms", response_model=PlatformsResponse, tags=["meta"])
@@ -102,7 +169,7 @@ async def generate(
     target_lang: str = Form(default="en"),
     extra_info: str | None = Form(
         default=None,
-        description="Optional JSON object with extra seller context",
+        description="Optional JSON object or natural language text with extra seller context",
     ),
 ) -> ListingResponse:
     """Generate a compliance-checked, localized listing from product images."""
@@ -116,18 +183,7 @@ async def generate(
             detail=f"At most {settings.vision_max_images} images are allowed.",
         )
 
-    parsed_extra: dict | None = None
-    if extra_info:
-        try:
-            parsed_extra = json.loads(extra_info)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=400, detail=f"extra_info is not valid JSON: {exc}"
-            ) from exc
-        if not isinstance(parsed_extra, dict):
-            raise HTTPException(
-                status_code=400, detail="extra_info must be a JSON object."
-            )
+    parsed_extra = _parse_extra_info(extra_info)
 
     image_bytes = [await f.read() for f in images]
     if any(not data for data in image_bytes):
@@ -155,6 +211,98 @@ async def generate(
             status_code=500,
             detail=f"Listing generation failed: {exc}",
         ) from exc
+
+
+@router.post(
+    "/listing/batch_generate",
+    response_model=BatchGenerateResponse,
+    tags=["listing"],
+)
+async def batch_generate(
+    request: BatchGenerateRequest,
+) -> BatchGenerateResponse:
+    """Generate listings for multiple products concurrently.
+
+    Each product carries its own images (base64-encoded), category, platform,
+    target language, and optional extra info. All products are processed in
+    parallel via ``asyncio.gather``.
+    """
+    settings = get_settings()
+
+    if not request.products:
+        raise HTTPException(status_code=400, detail="At least one product is required.")
+
+    async def _process_one(item: BatchProductItem) -> BatchProductResult:
+        try:
+            # Validate platform
+            try:
+                plat = Platform(item.platform)
+            except ValueError:
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error=f"Unsupported platform: {item.platform}",
+                )
+
+            # Decode images
+            if not item.images_base64:
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error="At least one image is required.",
+                )
+            if len(item.images_base64) > settings.vision_max_images:
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error=f"At most {settings.vision_max_images} images are allowed.",
+                )
+
+            try:
+                image_bytes = [_decode_base64_image(img) for img in item.images_base64]
+            except Exception as exc:
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error=f"Failed to decode image: {exc}",
+                )
+
+            if any(not data for data in image_bytes):
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error="Empty image data detected.",
+                )
+
+            parsed_extra = _parse_extra_info(item.extra_info)
+
+            result = await generate_listing(
+                images=image_bytes,
+                category=item.category,
+                platform=plat.value,
+                target_lang=item.target_lang,
+                extra_info=parsed_extra,
+                settings=settings,
+            )
+            return BatchProductResult(
+                product_index=item.product_index,
+                listing=result,
+            )
+        except Exception as exc:
+            logger.error(
+                "api.batch_generate.product_failed",
+                product_index=item.product_index,
+                error=str(exc),
+            )
+            return BatchProductResult(
+                product_index=item.product_index,
+                error=str(exc),
+            )
+
+    logger.info(
+        "api.batch_generate.request",
+        num_products=len(request.products),
+    )
+
+    results = await asyncio.gather(
+        *[_process_one(item) for item in request.products]
+    )
+    return BatchGenerateResponse(results=list(results))
 
 
 @router.post("/rag/rebuild", tags=["rag"])

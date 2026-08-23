@@ -163,4 +163,7 @@ def _to_response(
             latency_ms=latency_ms,
             rag_chunks_used=len(rules),
         ),
+        title_zh=str(result.get("title_zh", "")),
+        bullet_points_zh=[str(b) for b in result.get("bullet_points_zh", [])],
+        description_zh=str(result.get("description_zh", "")),
     )

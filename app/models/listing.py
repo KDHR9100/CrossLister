@@ -71,3 +71,7 @@ class ListingResponse(BaseModel):
     compliance: ComplianceResult
     visual_analysis: VisualAnalysis = Field(default_factory=VisualAnalysis)
     metadata: ListingMetadata = Field(default_factory=ListingMetadata)
+    # Chinese translation fields (always provided alongside target language)
+    title_zh: str = ""
+    bullet_points_zh: list[str] = Field(default_factory=list)
+    description_zh: str = ""

@@ -51,6 +51,10 @@ class AgentState(TypedDict, total=False):
 
     # -- Translate node output (final) --------------------------------
     final_listing: GeneratedListing
+    # Chinese translations of the final listing
+    title_zh: str
+    bullet_points_zh: list[str]
+    description_zh: str
 
     # -- Bookkeeping ---------------------------------------------------
     error: str | None

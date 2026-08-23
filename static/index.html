@@ -19,46 +19,74 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .pipeline-step.active .step-num{background:var(--primary);box-shadow:0 0 0 3px rgba(108,92,231,.2)}
 .pipeline-step.active{color:var(--primary);font-weight:600}
 .pipeline-arrow{color:var(--border);font-size:1.2rem;margin:0 .2rem}
-.main{flex:1;display:grid;grid-template-columns:420px 1fr;gap:1.5rem;padding:1.5rem;max-width:1400px;margin:0 auto;width:100%}
+.main{flex:1;display:grid;grid-template-columns:460px 1fr;gap:1.5rem;padding:1.5rem;max-width:1500px;margin:0 auto;width:100%}
 .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:1.5rem}
 .card-title{font-size:1.05rem;font-weight:600;margin-bottom:1.2rem;color:var(--text);display:flex;align-items:center;gap:.5rem}
 .card-title .icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;display:flex;align-items:center;justify-content:center;font-size:.85rem}
-.form-group{margin-bottom:1.2rem}
-.form-label{display:block;font-size:.85rem;font-weight:500;color:var(--text-secondary);margin-bottom:.4rem}
-.form-input,.form-select,.form-textarea{width:100%;padding:.6rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;color:var(--text);background:var(--bg);transition:border-color .2s,box-shadow .2s;outline:none;font-family:inherit}
+
+/* Product Tabs */
+.product-tabs{display:flex;align-items:center;gap:.4rem;margin-bottom:1rem;flex-wrap:wrap}
+.product-tab{padding:.4rem .8rem;border-radius:8px 8px 0 0;font-size:.82rem;cursor:pointer;border:1.5px solid var(--border);border-bottom:none;background:var(--bg);color:var(--text-secondary);display:flex;align-items:center;gap:.3rem;transition:all .15s;position:relative}
+.product-tab.active{background:var(--card);color:var(--primary);font-weight:600;border-color:var(--primary);z-index:1}
+.product-tab .tab-close{width:16px;height:16px;border-radius:50%;border:none;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:.7rem;display:flex;align-items:center;justify-content:center;margin-left:.2rem}
+.product-tab .tab-close:hover{background:var(--danger);color:#fff}
+.product-tab-add{padding:.4rem .6rem;border-radius:8px;font-size:.82rem;cursor:pointer;border:1.5px dashed var(--border);background:transparent;color:var(--text-secondary);transition:all .15s}
+.product-tab-add:hover{border-color:var(--primary);color:var(--primary)}
+
+.form-group{margin-bottom:1rem}
+.form-label{display:block;font-size:.82rem;font-weight:500;color:var(--text-secondary);margin-bottom:.3rem}
+.form-input,.form-select,.form-textarea{width:100%;padding:.55rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;color:var(--text);background:var(--bg);transition:border-color .2s,box-shadow .2s;outline:none;font-family:inherit}
 .form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(108,92,231,.1)}
-.form-textarea{resize:vertical;min-height:80px;font-family:"SF Mono","Fira Code",monospace;font-size:.82rem}
-.upload-area{border:2px dashed var(--border);border-radius:var(--radius);padding:1.5rem;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg);position:relative}
+.form-textarea{resize:vertical;min-height:70px;font-family:"SF Mono","Fira Code",monospace;font-size:.8rem}
+.upload-area{border:2px dashed var(--border);border-radius:var(--radius);padding:1.2rem;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg);position:relative}
 .upload-area:hover,.upload-area.dragover{border-color:var(--primary);background:rgba(108,92,231,.03)}
-.upload-area .upload-icon{font-size:2rem;margin-bottom:.5rem}
-.upload-area .upload-text{font-size:.85rem;color:var(--text-secondary)}
-.upload-area .upload-hint{font-size:.75rem;color:var(--text-secondary);opacity:.7;margin-top:.3rem}
+.upload-area .upload-icon{font-size:1.8rem;margin-bottom:.3rem}
+.upload-area .upload-text{font-size:.82rem;color:var(--text-secondary)}
+.upload-area .upload-hint{font-size:.72rem;color:var(--text-secondary);opacity:.7;margin-top:.2rem}
 .upload-area input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer}
-.thumbnails{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem}
-.thumb{width:64px;height:64px;border-radius:8px;overflow:hidden;position:relative;border:2px solid var(--border)}
+.thumbnails{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem}
+.thumb{width:56px;height:56px;border-radius:8px;overflow:hidden;position:relative;border:2px solid var(--border)}
 .thumb img{width:100%;height:100%;object-fit:cover}
-.thumb .remove-btn{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:none;cursor:pointer;font-size:.65rem;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
+.thumb .remove-btn{position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:none;cursor:pointer;font-size:.6rem;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
 .thumb:hover .remove-btn{opacity:1}
-.radio-group{display:flex;gap:.5rem;flex-wrap:wrap}
-.radio-btn{flex:1;min-width:80px}
+.radio-group{display:flex;gap:.4rem;flex-wrap:wrap}
+.radio-btn{flex:1;min-width:70px}
 .radio-btn input{display:none}
-.radio-btn label{display:block;padding:.5rem .8rem;text-align:center;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;cursor:pointer;transition:all .2s;background:var(--bg)}
+.radio-btn label{display:block;padding:.4rem .6rem;text-align:center;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;cursor:pointer;transition:all .2s;background:var(--bg)}
 .radio-btn input:checked+label{border-color:var(--primary);background:rgba(108,92,231,.08);color:var(--primary);font-weight:600}
-.btn-generate{width:100%;padding:.75rem;border:none;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:.5rem}
+.btn-generate{width:100%;padding:.7rem;border:none;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:.5rem}
 .btn-generate:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 16px rgba(108,92,231,.3)}
 .btn-generate:disabled{opacity:.7;cursor:not-allowed}
 .spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;display:none}
 .btn-generate.loading .spinner{display:block}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* Extra info section */
+.extra-info-section{border:1.5px solid var(--border);border-radius:8px;padding:.8rem;background:var(--bg)}
+.extra-info-toggle{display:flex;gap:.4rem;margin-bottom:.6rem}
+.extra-info-toggle button{padding:.3rem .7rem;border-radius:6px;border:1.5px solid var(--border);background:var(--card);font-size:.78rem;cursor:pointer;color:var(--text-secondary);transition:all .15s}
+.extra-info-toggle button.active{border-color:var(--primary);background:rgba(108,92,231,.08);color:var(--primary);font-weight:600}
+.json-guide{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:.7rem;margin-bottom:.6rem;font-size:.78rem;line-height:1.6}
+.json-guide summary{cursor:pointer;font-weight:600;color:var(--primary);font-size:.82rem;margin-bottom:.3rem}
+.json-guide pre{background:var(--bg);padding:.5rem;border-radius:6px;overflow-x:auto;font-size:.75rem;margin:.3rem 0;border:1px solid var(--border)}
+.json-guide .guide-text{color:var(--text-secondary);margin-bottom:.3rem}
+
+/* Results */
 .results-panel{display:flex;flex-direction:column;gap:1.2rem}
+.result-tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem}
+.result-tab{padding:.4rem .8rem;border-radius:8px 8px 0 0;font-size:.82rem;cursor:pointer;border:1.5px solid var(--border);border-bottom:none;background:var(--bg);color:var(--text-secondary);transition:all .15s}
+.result-tab.active{background:var(--card);color:var(--primary);font-weight:600;border-color:var(--primary)}
 .result-section{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:1.2rem 1.5rem}
 .result-section h3{font-size:.9rem;font-weight:600;color:var(--primary);margin-bottom:.6rem;display:flex;align-items:center;gap:.4rem}
 .result-section h3 .dot{width:8px;height:8px;border-radius:50%;background:var(--primary)}
-.result-title{font-size:1.1rem;font-weight:600;line-height:1.5;color:var(--text)}
+.result-title{font-size:1.05rem;font-weight:600;line-height:1.5;color:var(--text)}
+.result-title-zh{font-size:.92rem;color:var(--text-secondary);margin-top:.3rem;padding:.4rem .6rem;background:var(--bg);border-radius:6px;border-left:3px solid var(--primary-light)}
 .bullet-list{list-style:none;display:flex;flex-direction:column;gap:.4rem}
-.bullet-list li{font-size:.88rem;line-height:1.5;padding-left:1.2rem;position:relative;color:var(--text)}
+.bullet-list li{font-size:.85rem;line-height:1.5;padding-left:1.2rem;position:relative;color:var(--text)}
 .bullet-list li::before{content:'';position:absolute;left:0;top:.55em;width:6px;height:6px;border-radius:50%;background:var(--primary-light)}
-.description-text{font-size:.88rem;line-height:1.7;color:var(--text);white-space:pre-wrap}
+.bullet-zh{font-size:.8rem;color:var(--text-secondary);margin-top:.15rem;padding-left:1.2rem}
+.description-text{font-size:.85rem;line-height:1.7;color:var(--text);white-space:pre-wrap}
+.description-zh{font-size:.82rem;color:var(--text-secondary);margin-top:.5rem;padding:.5rem .7rem;background:var(--bg);border-radius:6px;border-left:3px solid var(--primary-light);white-space:pre-wrap}
 .tags{display:flex;flex-wrap:wrap;gap:.4rem}
 .tag{padding:.25rem .65rem;border-radius:20px;font-size:.78rem;background:rgba(108,92,231,.08);color:var(--primary);border:1px solid rgba(108,92,231,.15)}
 .compliance-badge{display:inline-flex;align-items:center;gap:.3rem;padding:.3rem .8rem;border-radius:20px;font-size:.82rem;font-weight:600}
@@ -83,6 +111,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .footer{text-align:center;padding:1.2rem;font-size:.8rem;color:var(--text-secondary);border-top:1px solid var(--border);background:var(--card)}
 .footer a{color:var(--primary);text-decoration:none}
 .footer a:hover{text-decoration:underline}
+.zh-label{display:inline-block;font-size:.72rem;color:var(--primary);background:rgba(108,92,231,.08);padding:.1rem .4rem;border-radius:4px;margin-bottom:.2rem;font-weight:500}
 @media(max-width:960px){.main{grid-template-columns:1fr}.pipeline{gap:.2rem;padding:1rem .5rem}.pipeline-step{font-size:.78rem;padding:.4rem .5rem}.pipeline-arrow{font-size:.9rem}}
 @media(max-width:600px){.header h1{font-size:1.5rem}.main{padding:1rem;gap:1rem}.visual-grid{grid-template-columns:1fr 1fr}.metadata-bar{flex-direction:column;gap:.5rem}}
 </style>
@@ -106,53 +135,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 <main class="main">
 <div class="left-panel">
 <div class="card">
-<div class="card-title"><span class="icon">&#9998;</span>商品信息输入</div>
-<div class="form-group">
-<label class="form-label">商品图片（1-5 张）</label>
-<div class="upload-area" id="uploadArea">
-<div class="upload-icon">&#128247;</div>
-<div class="upload-text">点击或拖拽图片到此处</div>
-<div class="upload-hint">支持 JPG / PNG / WEBP，最多 5 张</div>
-<input type="file" id="fileInput" accept="image/*" multiple>
+<div class="card-title"><span class="icon">&#9998;</span>商品信息录入</div>
+
+<!-- Product Tabs -->
+<div class="product-tabs" id="productTabs">
+<button class="product-tab active" data-idx="0" onclick="switchProduct(0)">
+<span class="tab-name">产品 1</span>
+</button>
+<button class="product-tab-add" onclick="addProduct()" title="添加新产品">+ 添加产品</button>
 </div>
-<div class="thumbnails" id="thumbnails"></div>
+
+<!-- Product Form Container -->
+<div id="productForms">
+<!-- Product form will be rendered here by JS -->
 </div>
-<div class="form-group">
-<label class="form-label" for="categoryInput">商品类目</label>
-<input type="text" class="form-input" id="categoryInput" placeholder="例如：Home &amp; Kitchen &gt; Storage &amp; Organization">
-</div>
-<div class="form-group">
-<label class="form-label">目标平台</label>
-<div class="radio-group">
-<div class="radio-btn"><input type="radio" name="platform" id="platAmazon" value="amazon" checked><label for="platAmazon">Amazon</label></div>
-<div class="radio-btn"><input type="radio" name="platform" id="platShopee" value="shopee"><label for="platShopee">Shopee</label></div>
-<div class="radio-btn"><input type="radio" name="platform" id="platTemu" value="temu"><label for="platTemu">Temu</label></div>
-</div>
-</div>
-<div class="form-group">
-<label class="form-label" for="langSelect">目标语言</label>
-<select class="form-select" id="langSelect">
-<option value="en">English</option>
-<option value="zh">中文</option>
-<option value="ja">日本語</option>
-<option value="ko">한국어</option>
-<option value="es">Español</option>
-<option value="fr">Français</option>
-<option value="de">Deutsch</option>
-<option value="pt">Português</option>
-<option value="th">ภาษาไทย</option>
-<option value="vi">Tiếng Việt</option>
-<option value="id">Bahasa Indonesia</option>
-<option value="ms">Bahasa Melayu</option>
-</select>
-</div>
-<div class="form-group">
-<label class="form-label" for="extraInput">补充信息（可选，JSON 格式）</label>
-<textarea class="form-textarea" id="extraInput" placeholder='{"brand": "...", "material": "..."}'></textarea>
-</div>
+
 <button class="btn-generate" id="generateBtn" onclick="handleGenerate()">
 <span class="spinner"></span>
-<span class="btn-text">&#9889; 生成 Listing</span>
+<span class="btn-text">&#9889; 批量生成 Listing</span>
 </button>
 </div>
 </div>
@@ -160,87 +160,478 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 <div class="empty-state" id="emptyState">
 <div class="empty-icon">&#128230;</div>
 <p>上传商品图片并填写信息后，点击生成按钮</p>
-<p style="margin-top:.3rem;font-size:.82rem;opacity:.7">Listing 结果将在此处展示</p>
+<p style="margin-top:.3rem;font-size:.82rem;opacity:.7">支持多产品同时生成，结果将在此处展示</p>
 </div>
 </div>
 </main>
 <footer class="footer">
 CrossLister &copy; 2026 &mdash; <a href="/docs">API 文档</a>
 </footer>
+
 <script>
-let uploadedFiles=[];
-const uploadArea=document.getElementById('uploadArea');
-const fileInput=document.getElementById('fileInput');
-const thumbnailsEl=document.getElementById('thumbnails');
-['dragenter','dragover'].forEach(e=>{uploadArea.addEventListener(e,ev=>{ev.preventDefault();uploadArea.classList.add('dragover')})});
-['dragleave','drop'].forEach(e=>{uploadArea.addEventListener(e,ev=>{ev.preventDefault();uploadArea.classList.remove('dragover')})});
-uploadArea.addEventListener('drop',e=>{const files=Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/'));addFiles(files)});
-fileInput.addEventListener('change',()=>{addFiles(Array.from(fileInput.files));fileInput.value=''});
-function addFiles(files){const r=5-uploadedFiles.length;if(r<=0)return;files.slice(0,r).forEach(f=>uploadedFiles.push(f));renderThumbnails()}
-function removeFile(i){uploadedFiles.splice(i,1);renderThumbnails()}
-function renderThumbnails(){thumbnailsEl.innerHTML='';uploadedFiles.forEach((file,idx)=>{const d=document.createElement('div');d.className='thumb';const img=document.createElement('img');img.src=URL.createObjectURL(file);img.onload=()=>URL.revokeObjectURL(img.src);const btn=document.createElement('button');btn.className='remove-btn';btn.textContent='\u2715';btn.onclick=ev=>{ev.stopPropagation();removeFile(idx)};d.appendChild(img);d.appendChild(btn);thumbnailsEl.appendChild(d)})}
-function setPipelineStep(step){document.querySelectorAll('.pipeline-step').forEach(el=>{el.classList.toggle('active',parseInt(el.dataset.step)<=step)})}
-async function handleGenerate(){
-if(uploadedFiles.length===0){alert('请至少上传一张商品图片');return}
-const category=document.getElementById('categoryInput').value.trim();
-if(!category){alert('请填写商品类目');return}
-const platform=document.querySelector('input[name="platform"]:checked').value;
-const targetLang=document.getElementById('langSelect').value;
-const extraInfo=document.getElementById('extraInput').value.trim();
-const btn=document.getElementById('generateBtn');
-btn.classList.add('loading');btn.disabled=true;
-btn.querySelector('.btn-text').textContent='生成中...';
-const rp=document.getElementById('resultsPanel');
-rp.innerHTML='<div class="empty-state"><div class="spinner" style="display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 1rem"></div><p>正在生成 Listing，请稍候...</p></div>';
-let pt=setInterval(()=>{const a=document.querySelectorAll('.pipeline-step.active');const n=a.length+1;if(n<=5)setPipelineStep(n)},2000);
-try{
-const fd=new FormData();
-uploadedFiles.forEach(f=>fd.append('images',f));
-fd.append('category',category);
-fd.append('platform',platform);
-fd.append('target_lang',targetLang);
-if(extraInfo)fd.append('extra_info',extraInfo);
-const resp=await fetch('/api/v1/listing/generate',{method:'POST',body:fd});
-clearInterval(pt);setPipelineStep(5);
-if(!resp.ok){const t=await resp.text();throw new Error(t||('HTTP '+resp.status))}
-const data=await resp.json();renderResults(data);
-}catch(err){clearInterval(pt);rp.innerHTML='<div class="error-msg"><strong>生成失败：</strong>'+escapeHtml(err.message)+'</div>'}
-finally{btn.classList.remove('loading');btn.disabled=false;btn.querySelector('.btn-text').textContent='\u26A1 生成 Listing'}
+// ====== Data Model ======
+let products = [createEmptyProduct()];
+let activeProductIdx = 0;
+let allResults = [];
+
+function createEmptyProduct() {
+  return {
+    images: [],
+    category: '',
+    platform: 'amazon',
+    targetLang: 'en',
+    extraInfo: '',
+    extraMode: 'natural' // 'json' or 'natural'
+  };
 }
-function renderResults(data){
-const panel=document.getElementById('resultsPanel');
-const compliance=data.compliance||{};
-const visual=data.visual_analysis||{};
-const meta=data.metadata||{};
-let h='';
-if(data.title){h+='<div class="result-section"><h3><span class="dot"></span>商品标题</h3><div class="result-title">'+escapeHtml(data.title)+'</div></div>'}
-const bullets=data.bullet_points||[];
-if(bullets.length>0){h+='<div class="result-section"><h3><span class="dot"></span>卖点描述</h3><ul class="bullet-list">';bullets.forEach(b=>{h+='<li>'+escapeHtml(b)+'</li>'});h+='</ul></div>'}
-if(data.description){h+='<div class="result-section"><h3><span class="dot"></span>商品描述</h3><div class="description-text">'+escapeHtml(data.description)+'</div></div>'}
-const kw=data.backend_keywords||[];
-if(kw.length>0){h+='<div class="result-section"><h3><span class="dot"></span>后台关键词</h3><div class="tags">';kw.forEach(k=>{h+='<span class="tag">'+escapeHtml(k)+'</span>'});h+='</div></div>'}
-if(compliance&&(compliance.passed!==undefined||compliance.violations||compliance.warnings||compliance.suggestions)){
-const passed=compliance.passed;
-h+='<div class="result-section"><h3><span class="dot"></span>合规审核</h3>';
-h+='<span class="compliance-badge '+(passed?'pass':'fail')+'">'+(passed?'\u2714 通过':'\u2718 未通过')+'</span>';
-h+='<div class="compliance-items">';
-(compliance.violations||[]).forEach(v=>{h+='<div class="compliance-item violation"><strong>违规：</strong>'+escapeHtml(v)+'</div>'});
-(compliance.warnings||[]).forEach(w=>{h+='<div class="compliance-item warning"><strong>警告：</strong>'+escapeHtml(w)+'</div>'});
-(compliance.suggestions||[]).forEach(s=>{h+='<div class="compliance-item suggestion"><strong>建议：</strong>'+escapeHtml(s)+'</div>'});
-h+='</div></div>'}
-const vk=[{key:'detected_category',label:'商品类目'},{key:'colors',label:'颜色'},{key:'materials',label:'材质'},{key:'selling_points',label:'卖点'},{key:'scenes',label:'使用场景'},{key:'raw_description',label:'视觉描述'}];
-const vi=vk.filter(v=>{const val=visual[v.key];return val!==undefined&&val!==null&&val!==''});
-if(vi.length>0){h+='<div class="result-section"><h3><span class="dot"></span>视觉分析</h3><div class="visual-grid">';
-vi.forEach(v=>{let val=visual[v.key];if(Array.isArray(val))val=val.join(', ');h+='<div class="visual-item"><div class="vi-label">'+escapeHtml(v.label)+'</div><div class="vi-value">'+escapeHtml(String(val))+'</div></div>'});
-h+='</div></div>'}
-if(meta.model_used||meta.latency_ms||meta.rag_chunks_used!==undefined){
-h+='<div class="result-section"><div class="metadata-bar">';
-if(meta.model_used)h+='<div class="meta-item">模型：<span>'+escapeHtml(meta.model_used)+'</span></div>';
-if(meta.latency_ms)h+='<div class="meta-item">耗时：<span>'+escapeHtml(String(meta.latency_ms))+'ms</span></div>';
-if(meta.rag_chunks_used!==undefined)h+='<div class="meta-item">RAG 检索：<span>'+escapeHtml(String(meta.rag_chunks_used))+' chunks</span></div>';
-h+='</div></div>'}
-panel.innerHTML=h||'<div class="empty-state"><p>未返回有效数据</p></div>'}
-function escapeHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+// ====== Product Tab Management ======
+function renderProductTabs() {
+  const tabs = document.getElementById('productTabs');
+  let html = '';
+  products.forEach((p, i) => {
+    const isActive = i === activeProductIdx;
+    const imgCount = p.images.length;
+    const label = `产品 ${i + 1}` + (imgCount > 0 ? ` (${imgCount}图)` : '');
+    html += `<div class="product-tab${isActive ? ' active' : ''}" data-idx="${i}" onclick="switchProduct(${i})">
+      <span class="tab-name">${label}</span>
+      ${products.length > 1 ? `<button class="tab-close" onclick="event.stopPropagation();removeProduct(${i})" title="删除此产品">\u2715</button>` : ''}
+    </div>`;
+  });
+  html += `<button class="product-tab-add" onclick="addProduct()" title="添加新产品">+ 添加产品</button>`;
+  tabs.innerHTML = html;
+}
+
+function switchProduct(idx) {
+  saveCurrentForm();
+  activeProductIdx = idx;
+  renderProductTabs();
+  renderProductForm();
+}
+
+function addProduct() {
+  saveCurrentForm();
+  products.push(createEmptyProduct());
+  activeProductIdx = products.length - 1;
+  renderProductTabs();
+  renderProductForm();
+}
+
+function removeProduct(idx) {
+  if (products.length <= 1) return;
+  products.splice(idx, 1);
+  if (activeProductIdx >= products.length) activeProductIdx = products.length - 1;
+  renderProductTabs();
+  renderProductForm();
+}
+
+// ====== Product Form Rendering ======
+function renderProductForm() {
+  const container = document.getElementById('productForms');
+  const p = products[activeProductIdx];
+  const idx = activeProductIdx;
+
+  container.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">商品图片</label>
+      <div class="upload-area" id="uploadArea${idx}">
+        <div class="upload-icon">&#128247;</div>
+        <div class="upload-text">点击或拖拽图片到此处</div>
+        <div class="upload-hint">支持 JPG / PNG / WEBP</div>
+        <input type="file" id="fileInput${idx}" accept="image/*" multiple>
+      </div>
+      <div class="thumbnails" id="thumbnails${idx}"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="categoryInput${idx}">商品类目</label>
+      <input type="text" class="form-input" id="categoryInput${idx}" placeholder="例如：Home & Kitchen > Storage" value="${escapeAttr(p.category)}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">目标平台</label>
+      <div class="radio-group">
+        <div class="radio-btn"><input type="radio" name="platform${idx}" id="plat${idx}Amazon" value="amazon" ${p.platform==='amazon'?'checked':''}><label for="plat${idx}Amazon">Amazon</label></div>
+        <div class="radio-btn"><input type="radio" name="platform${idx}" id="plat${idx}Shopee" value="shopee" ${p.platform==='shopee'?'checked':''}><label for="plat${idx}Shopee">Shopee</label></div>
+        <div class="radio-btn"><input type="radio" name="platform${idx}" id="plat${idx}Temu" value="temu" ${p.platform==='temu'?'checked':''}><label for="plat${idx}Temu">Temu</label></div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="langSelect${idx}">目标语言</label>
+      <select class="form-select" id="langSelect${idx}">
+        <option value="en" ${p.targetLang==='en'?'selected':''}>English</option>
+        <option value="zh" ${p.targetLang==='zh'?'selected':''}>中文</option>
+        <option value="ja" ${p.targetLang==='ja'?'selected':''}>日本語</option>
+        <option value="ko" ${p.targetLang==='ko'?'selected':''}>한국어</option>
+        <option value="es" ${p.targetLang==='es'?'selected':''}>Español</option>
+        <option value="fr" ${p.targetLang==='fr'?'selected':''}>Français</option>
+        <option value="de" ${p.targetLang==='de'?'selected':''}>Deutsch</option>
+        <option value="pt" ${p.targetLang==='pt'?'selected':''}>Português</option>
+        <option value="th" ${p.targetLang==='th'?'selected':''}>ภาษาไทย</option>
+        <option value="vi" ${p.targetLang==='vi'?'selected':''}>Tiếng Việt</option>
+        <option value="id" ${p.targetLang==='id'?'selected':''}>Bahasa Indonesia</option>
+        <option value="ms" ${p.targetLang==='ms'?'selected':''}>Bahasa Melayu</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">补充信息（可选）</label>
+      <div class="extra-info-section">
+        <div class="extra-info-toggle">
+          <button type="button" class="${p.extraMode==='natural'?'active':''}" onclick="setExtraMode(${idx},'natural')">自然语言</button>
+          <button type="button" class="${p.extraMode==='json'?'active':''}" onclick="setExtraMode(${idx},'json')">JSON 格式</button>
+        </div>
+        ${p.extraMode === 'json' ? renderJsonGuide() : ''}
+        <textarea class="form-textarea" id="extraInput${idx}"
+          placeholder="${p.extraMode === 'json' ? '{"brand": "...", "material": "..."}' : '例如：品牌是XX，材质为硅胶，售价约20美元，适合3-6岁儿童使用'}'
+          oninput="products[${idx}].extraInfo=this.value"
+        >${escapeHtml(p.extraInfo)}</textarea>
+      </div>
+    </div>
+  `;
+
+  // Setup upload handlers
+  setupUploadHandlers(idx);
+  renderThumbnails(idx);
+}
+
+function renderJsonGuide() {
+  return `<details class="json-guide">
+    <summary>JSON 格式说明与示例</summary>
+    <div class="guide-text">
+      <strong>什么是 JSON？</strong><br>
+      JSON 是一种数据格式，用键值对来组织信息。格式要求：<br>
+      &bull; 用花括号 <code>{}</code> 包裹整体<br>
+      &bull; 键名用双引号 <code>""</code> 包裹<br>
+      &bull; 键和值之间用冒号 <code>:</code> 分隔<br>
+      &bull; 多个键值对之间用逗号 <code>,</code> 分隔<br>
+      &bull; 文本值用双引号 <code>""</code>，数字不加引号
+    </div>
+    <div class="guide-text"><strong>示例 1 — 基本信息：</strong></div>
+    <pre>{
+  "brand": "品牌名称",
+  "material": "材质，如 silicone / plastic",
+  "color": "颜色",
+  "size": "尺寸，如 Large / 30cm"
+}</pre>
+    <div class="guide-text"><strong>示例 2 — 含价格和适用场景：</strong></div>
+    <pre>{
+  "brand": "MyBrand",
+  "price_range": "$15-$25",
+  "target_audience": "office workers",
+  "features": ["waterproof", "foldable"],
+  "warranty": "1 year"
+}</pre>
+    <div class="guide-text"><strong>提示：</strong>如果不确定 JSON 格式，可以直接切换到「自然语言」模式，用日常文字描述即可。</div>
+  </details>`;
+}
+
+function setExtraMode(idx, mode) {
+  saveCurrentForm();
+  products[idx].extraMode = mode;
+  renderProductForm();
+}
+
+// ====== File Upload ======
+function setupUploadHandlers(idx) {
+  const area = document.getElementById(`uploadArea${idx}`);
+  const input = document.getElementById(`fileInput${idx}`);
+  if (!area || !input) return;
+
+  ['dragenter','dragover'].forEach(e => {
+    area.addEventListener(e, ev => { ev.preventDefault(); area.classList.add('dragover'); });
+  });
+  ['dragleave','drop'].forEach(e => {
+    area.addEventListener(e, ev => { ev.preventDefault(); area.classList.remove('dragover'); });
+  });
+  area.addEventListener('drop', e => {
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    addFiles(idx, files);
+  });
+  input.addEventListener('change', () => {
+    addFiles(idx, Array.from(input.files));
+    input.value = '';
+  });
+}
+
+function addFiles(idx, files) {
+  const p = products[idx];
+  const remaining = 10 - p.images.length;
+  if (remaining <= 0) return;
+  files.slice(0, remaining).forEach(f => p.images.push(f));
+  renderThumbnails(idx);
+  renderProductTabs();
+}
+
+function removeFile(idx, fileIdx) {
+  products[idx].images.splice(fileIdx, 1);
+  renderThumbnails(idx);
+  renderProductTabs();
+}
+
+function renderThumbnails(idx) {
+  const el = document.getElementById(`thumbnails${idx}`);
+  if (!el) return;
+  const p = products[idx];
+  el.innerHTML = '';
+  p.images.forEach((file, i) => {
+    const d = document.createElement('div');
+    d.className = 'thumb';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    const btn = document.createElement('button');
+    btn.className = 'remove-btn';
+    btn.textContent = '\u2715';
+    btn.onclick = ev => { ev.stopPropagation(); removeFile(idx, i); };
+    d.appendChild(img);
+    d.appendChild(btn);
+    el.appendChild(d);
+  });
+}
+
+// ====== Save Form State ======
+function saveCurrentForm() {
+  const idx = activeProductIdx;
+  const p = products[idx];
+  const catEl = document.getElementById(`categoryInput${idx}`);
+  const langEl = document.getElementById(`langSelect${idx}`);
+  const extraEl = document.getElementById(`extraInput${idx}`);
+  if (catEl) p.category = catEl.value.trim();
+  const platEl = document.querySelector(`input[name="platform${idx}"]:checked`);
+  if (platEl) p.platform = platEl.value;
+  if (langEl) p.targetLang = langEl.value;
+  if (extraEl) p.extraInfo = extraEl.value;
+}
+
+// ====== Pipeline Step Animation ======
+function setPipelineStep(step) {
+  document.querySelectorAll('.pipeline-step').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.step) <= step);
+  });
+}
+
+// ====== File to Base64 ======
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ====== Generate ======
+async function handleGenerate() {
+  saveCurrentForm();
+
+  // Validate all products
+  for (let i = 0; i < products.length; i++) {
+    if (products[i].images.length === 0) {
+      alert(`产品 ${i + 1} 至少需要上传一张图片`);
+      switchProduct(i);
+      return;
+    }
+    if (!products[i].category) {
+      alert(`产品 ${i + 1} 请填写商品类目`);
+      switchProduct(i);
+      return;
+    }
+  }
+
+  const btn = document.getElementById('generateBtn');
+  btn.classList.add('loading');
+  btn.disabled = true;
+  btn.querySelector('.btn-text').textContent = '生成中...';
+
+  const rp = document.getElementById('resultsPanel');
+  rp.innerHTML = '<div class="empty-state"><div class="spinner" style="display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 1rem"></div><p>正在并发处理 ' + products.length + ' 个产品，请稍候...</p></div>';
+
+  let pt = setInterval(() => {
+    const a = document.querySelectorAll('.pipeline-step.active');
+    const n = a.length + 1;
+    if (n <= 5) setPipelineStep(n);
+  }, 2000);
+
+  try {
+    // Build batch request
+    const batchProducts = [];
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+      const imagesBase64 = await Promise.all(p.images.map(f => fileToBase64(f)));
+      batchProducts.push({
+        product_index: i,
+        images_base64: imagesBase64,
+        category: p.category,
+        platform: p.platform,
+        target_lang: p.targetLang,
+        extra_info: p.extraInfo || null
+      });
+    }
+
+    const resp = await fetch('/api/v1/listing/batch_generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products: batchProducts })
+    });
+
+    clearInterval(pt);
+    setPipelineStep(5);
+
+    if (!resp.ok) {
+      const t = await resp.text();
+      throw new Error(t || ('HTTP ' + resp.status));
+    }
+
+    const data = await resp.json();
+    allResults = data.results;
+    renderBatchResults(allResults);
+  } catch (err) {
+    clearInterval(pt);
+    rp.innerHTML = '<div class="error-msg"><strong>生成失败：</strong>' + escapeHtml(err.message) + '</div>';
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+    btn.querySelector('.btn-text').textContent = '\u26A1 批量生成 Listing';
+  }
+}
+
+// ====== Render Batch Results ======
+let activeResultTab = 0;
+
+function renderBatchResults(results) {
+  const panel = document.getElementById('resultsPanel');
+
+  if (!results || results.length === 0) {
+    panel.innerHTML = '<div class="empty-state"><p>未返回有效数据</p></div>';
+    return;
+  }
+
+  // Result tabs
+  let tabsHtml = '<div class="result-tabs">';
+  results.forEach((r, i) => {
+    const label = r.error ? `产品 ${i + 1} (失败)` : `产品 ${i + 1}`;
+    tabsHtml += `<div class="result-tab${i === activeResultTab ? ' active' : ''}" onclick="switchResultTab(${i})">${label}</div>`;
+  });
+  tabsHtml += '</div>';
+
+  // Result content
+  let contentHtml = '';
+  const active = results[activeResultTab];
+  if (!active) {
+    contentHtml = '<div class="empty-state"><p>无数据</p></div>';
+  } else if (active.error) {
+    contentHtml = `<div class="error-msg"><strong>产品 ${activeResultTab + 1} 生成失败：</strong>${escapeHtml(active.error)}</div>`;
+  } else if (active.listing) {
+    contentHtml = renderSingleResult(active.listing);
+  }
+
+  panel.innerHTML = tabsHtml + contentHtml;
+}
+
+function switchResultTab(idx) {
+  activeResultTab = idx;
+  renderBatchResults(allResults);
+}
+
+function renderSingleResult(data) {
+  const compliance = data.compliance || {};
+  const visual = data.visual_analysis || {};
+  const meta = data.metadata || {};
+  let h = '';
+
+  // Title
+  if (data.title) {
+    h += '<div class="result-section"><h3><span class="dot"></span>商品标题</h3>';
+    h += '<div class="result-title">' + escapeHtml(data.title) + '</div>';
+    if (data.title_zh) {
+      h += '<div class="zh-label">中文翻译</div>';
+      h += '<div class="result-title-zh">' + escapeHtml(data.title_zh) + '</div>';
+    }
+    h += '</div>';
+  }
+
+  // Bullet points
+  const bullets = data.bullet_points || [];
+  if (bullets.length > 0) {
+    const bulletsZh = data.bullet_points_zh || [];
+    h += '<div class="result-section"><h3><span class="dot"></span>卖点描述</h3>';
+    h += '<ul class="bullet-list">';
+    bullets.forEach((b, i) => {
+      h += '<li>' + escapeHtml(b) + '</li>';
+      if (bulletsZh[i]) {
+        h += '<div class="bullet-zh">' + escapeHtml(bulletsZh[i]) + '</div>';
+      }
+    });
+    h += '</ul></div>';
+  }
+
+  // Description
+  if (data.description) {
+    h += '<div class="result-section"><h3><span class="dot"></span>商品描述</h3>';
+    h += '<div class="description-text">' + escapeHtml(data.description) + '</div>';
+    if (data.description_zh) {
+      h += '<div class="zh-label" style="margin-top:.6rem">中文翻译</div>';
+      h += '<div class="description-zh">' + escapeHtml(data.description_zh) + '</div>';
+    }
+    h += '</div>';
+  }
+
+  // Backend keywords
+  const kw = data.backend_keywords || [];
+  if (kw.length > 0) {
+    h += '<div class="result-section"><h3><span class="dot"></span>后台关键词</h3><div class="tags">';
+    kw.forEach(k => { h += '<span class="tag">' + escapeHtml(k) + '</span>'; });
+    h += '</div></div>';
+  }
+
+  // Compliance
+  if (compliance && (compliance.passed !== undefined || compliance.violations || compliance.warnings || compliance.suggestions)) {
+    const passed = compliance.passed;
+    h += '<div class="result-section"><h3><span class="dot"></span>合规审核</h3>';
+    h += '<span class="compliance-badge ' + (passed ? 'pass' : 'fail') + '">' + (passed ? '\u2714 通过' : '\u2718 未通过') + '</span>';
+    h += '<div class="compliance-items">';
+    (compliance.violations || []).forEach(v => { h += '<div class="compliance-item violation"><strong>违规：</strong>' + escapeHtml(v) + '</div>'; });
+    (compliance.warnings || []).forEach(w => { h += '<div class="compliance-item warning"><strong>警告：</strong>' + escapeHtml(w) + '</div>'; });
+    (compliance.suggestions || []).forEach(s => { h += '<div class="compliance-item suggestion"><strong>建议：</strong>' + escapeHtml(s) + '</div>'; });
+    h += '</div></div>';
+  }
+
+  // Visual analysis
+  const vk = [
+    {key:'detected_category',label:'商品类目'},
+    {key:'colors',label:'颜色'},
+    {key:'materials',label:'材质'},
+    {key:'selling_points',label:'卖点'},
+    {key:'scenes',label:'使用场景'},
+    {key:'raw_description',label:'视觉描述'}
+  ];
+  const vi = vk.filter(v => { const val = visual[v.key]; return val !== undefined && val !== null && val !== ''; });
+  if (vi.length > 0) {
+    h += '<div class="result-section"><h3><span class="dot"></span>视觉分析</h3><div class="visual-grid">';
+    vi.forEach(v => {
+      let val = visual[v.key];
+      if (Array.isArray(val)) val = val.join(', ');
+      h += '<div class="visual-item"><div class="vi-label">' + escapeHtml(v.label) + '</div><div class="vi-value">' + escapeHtml(String(val)) + '</div></div>';
+    });
+    h += '</div></div>';
+  }
+
+  // Metadata
+  if (meta.model_used || meta.latency_ms || meta.rag_chunks_used !== undefined) {
+    h += '<div class="result-section"><div class="metadata-bar">';
+    if (meta.model_used) h += '<div class="meta-item">模型：<span>' + escapeHtml(meta.model_used) + '</span></div>';
+    if (meta.latency_ms) h += '<div class="meta-item">耗时：<span>' + escapeHtml(String(meta.latency_ms)) + 'ms</span></div>';
+    if (meta.rag_chunks_used !== undefined) h += '<div class="meta-item">RAG 检索：<span>' + escapeHtml(String(meta.rag_chunks_used)) + ' chunks</span></div>';
+    h += '</div></div>';
+  }
+
+  return h || '<div class="empty-state"><p>未返回有效数据</p></div>';
+}
+
+// ====== Utilities ======
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escapeAttr(s) { return s.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// ====== Init ======
+renderProductForm();
 </script>
 </body>
 </html>
