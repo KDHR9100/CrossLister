@@ -52,6 +52,22 @@ class VisionClient:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
+        # Lazily-created and cached OpenAI client so the HTTP connection pool
+        # is reused across calls instead of being rebuilt every request.
+        self._client = None
+
+    def _get_client(self):
+        """Return a cached AsyncOpenAI client, building it on first use."""
+        if self._client is None:
+            from openai import AsyncOpenAI
+
+            s = self._settings
+            self._client = AsyncOpenAI(
+                base_url=s.vision_api_base,
+                api_key=s.vision_api_key or "EMPTY",
+                timeout=s.vision_timeout_s,
+            )
+        return self._client
 
     async def analyze(
         self,
@@ -104,15 +120,8 @@ class VisionClient:
         extra_info: dict[str, Any] | None,
     ) -> VisualAnalysis:
         """Call an OpenAI-Vision compatible endpoint and parse its reply."""
-        # Lazy import so mock mode works without the `openai` package.
-        from openai import AsyncOpenAI
-
         s = self._settings
-        client = AsyncOpenAI(
-            base_url=s.vision_api_base,
-            api_key=s.vision_api_key or "EMPTY",
-            timeout=s.vision_timeout_s,
-        )
+        client = self._get_client()
 
         images_b64 = [encode_image(img) for img in images]
         mimes = [guess_mime(img) for img in images]

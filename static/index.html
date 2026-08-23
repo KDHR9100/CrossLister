@@ -60,6 +60,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;display:none}
 .btn-generate.loading .spinner{display:block}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes toastIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
 
 /* Extra info section */
 .extra-info-section{border:1.5px solid var(--border);border-radius:8px;padding:.8rem;background:var(--bg)}
@@ -342,6 +343,9 @@ CrossLister &copy; 2026 &mdash; <a href="/docs">API 文档</a>
 
 <script>
 // ====== Data Model ======
+// Max images per product. Kept in sync with backend Settings.vision_max_images.
+const MAX_IMAGES = 20;
+
 let products = [createEmptyProduct()];
 let activeProductIdx = 0;
 let allResults = [];
@@ -349,6 +353,27 @@ let allResults = [];
 // Batch import state
 let importParsedProducts = [];
 let importProductImages = {}; // { importIndex: [File, ...] }
+
+// ====== Toast Notifications ======
+// Lightweight in-page toast replacing alert(), so feedback never blocks the UI.
+function showToast(message, type) {
+  const wrap = document.getElementById('toastWrap') || (() => {
+    const w = document.createElement('div');
+    w.id = 'toastWrap';
+    w.style.cssText = 'position:fixed;top:1.2rem;right:1.2rem;z-index:9999;display:flex;flex-direction:column;gap:.6rem;max-width:360px';
+    document.body.appendChild(w);
+    return w;
+  })();
+  const colors = { success: '#10b981', warning: '#f59e0b', error: '#ef4444', info: '#6c5ce7' };
+  const t = document.createElement('div');
+  const bar = colors[type] || colors.info;
+  t.style.cssText = `background:#fff;border:1px solid var(--border);border-left:4px solid ${bar};border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:.8rem 1rem;font-size:.88rem;color:var(--text);display:flex;align-items:flex-start;gap:.6rem;animation:toastIn .25s ease`;
+  t.innerHTML = `<span style="flex:1;white-space:pre-wrap"></span><button style="border:none;background:none;cursor:pointer;color:var(--text-secondary);font-size:.9rem">\u2715</button>`;
+  t.firstChild.textContent = message;
+  t.lastChild.onclick = () => t.remove();
+  wrap.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .4s'; setTimeout(() => t.remove(), 400); }, 4200);
+}
 
 function createEmptyProduct() {
   return {
@@ -395,6 +420,12 @@ function addProduct() {
 
 function removeProduct(idx) {
   if (products.length <= 1) return;
+  const p = products[idx];
+  // Only ask for confirmation when the product carries user-entered data.
+  const hasData = p.images.length > 0 || p.category || p.extraInfo;
+  if (hasData && !confirm(`确定删除产品 ${idx + 1} 吗？已填写的图片与信息将被移除。`)) {
+    return;
+  }
   products.splice(idx, 1);
   if (activeProductIdx >= products.length) activeProductIdx = products.length - 1;
   renderProductTabs();
@@ -528,8 +559,11 @@ function setupUploadHandlers(idx) {
 
 function addFiles(idx, files) {
   const p = products[idx];
-  const remaining = 10 - p.images.length;
-  if (remaining <= 0) return;
+  const remaining = MAX_IMAGES - p.images.length;
+  if (remaining <= 0) {
+    showToast(`每个产品最多上传 ${MAX_IMAGES} 张图片，已忽略超出部分`, 'warning');
+    return;
+  }
   files.slice(0, remaining).forEach(f => p.images.push(f));
   renderThumbnails(idx);
   renderProductTabs();
@@ -541,25 +575,30 @@ function removeFile(idx, fileIdx) {
   renderProductTabs();
 }
 
-function renderThumbnails(idx) {
-  const el = document.getElementById(`thumbnails${idx}`);
-  if (!el) return;
-  const p = products[idx];
-  el.innerHTML = '';
-  p.images.forEach((file, i) => {
+// Shared thumbnail renderer used by both the manual form and the import table.
+function renderThumbList(container, files, thumbClass, removeClass, onRemove) {
+  if (!container) return;
+  container.innerHTML = '';
+  files.forEach((file, i) => {
     const d = document.createElement('div');
-    d.className = 'thumb';
+    d.className = thumbClass;
     const img = document.createElement('img');
     img.src = URL.createObjectURL(file);
     img.onload = () => URL.revokeObjectURL(img.src);
     const btn = document.createElement('button');
-    btn.className = 'remove-btn';
+    btn.className = removeClass;
     btn.textContent = '\u2715';
-    btn.onclick = ev => { ev.stopPropagation(); removeFile(idx, i); };
+    btn.onclick = ev => { ev.stopPropagation(); onRemove(i); };
     d.appendChild(img);
     d.appendChild(btn);
-    el.appendChild(d);
+    container.appendChild(d);
   });
+}
+
+function renderThumbnails(idx) {
+  const el = document.getElementById(`thumbnails${idx}`);
+  if (!el) return;
+  renderThumbList(el, products[idx].images, 'thumb', 'remove-btn', i => removeFile(idx, i));
 }
 
 // ====== Save Form State ======
@@ -597,17 +636,24 @@ function fileToBase64(file) {
 async function handleGenerate() {
   saveCurrentForm();
 
+  // Collect ALL validation errors across products so the user can fix them in
+  // one pass instead of being told about them one at a time.
+  const errors = [];
+  let firstBadIdx = -1;
   for (let i = 0; i < products.length; i++) {
     if (products[i].images.length === 0) {
-      alert(`产品 ${i + 1} 至少需要上传一张图片`);
-      switchProduct(i);
-      return;
+      errors.push(`产品 ${i + 1}：至少需要上传一张图片`);
+      if (firstBadIdx === -1) firstBadIdx = i;
     }
     if (!products[i].category) {
-      alert(`产品 ${i + 1} 请填写商品类目`);
-      switchProduct(i);
-      return;
+      errors.push(`产品 ${i + 1}：请填写商品类目`);
+      if (firstBadIdx === -1) firstBadIdx = i;
     }
+  }
+  if (errors.length > 0) {
+    showToast(errors.join('\n'), 'error');
+    if (firstBadIdx !== -1) switchProduct(firstBadIdx);
+    return;
   }
 
   const btn = document.getElementById('generateBtn');
@@ -616,12 +662,14 @@ async function handleGenerate() {
   btn.querySelector('.btn-text').textContent = '生成中...';
 
   const rp = document.getElementById('resultsPanel');
-  rp.innerHTML = '<div class="empty-state"><div class="spinner" style="display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 1rem"></div><p>正在并发处理 ' + products.length + ' 个产品，请稍候...</p></div>';
+  rp.innerHTML = '<div class="empty-state"><div class="spinner" style="display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 1rem"></div><p>正在并发处理 ' + products.length + ' 个产品，请稍候...</p><p style="font-size:.78rem;color:var(--text-secondary);margin-top:.4rem">下方步骤为预计进度，实际耗时取决于图片数量与模型响应速度</p></div>';
 
+  // Indeterminate progress hint: advance only up to step 4 while waiting,
+  // so the UI never falsely shows "complete". Step 5 lights up on real response.
   let pt = setInterval(() => {
     const a = document.querySelectorAll('.pipeline-step.active');
     const n = a.length + 1;
-    if (n <= 5) setPipelineStep(n);
+    if (n < 5) setPipelineStep(n);
   }, 2000);
 
   try {
@@ -842,7 +890,7 @@ function importGoBack() {
 async function handleImportFile(file) {
   const ext = file.name.split('.').pop().toLowerCase();
   if (!['csv', 'xlsx', 'xls'].includes(ext)) {
-    alert('不支持的文件格式，请上传 CSV 或 Excel (.xlsx) 文件');
+    showToast('不支持的文件格式，请上传 CSV 或 Excel (.xlsx) 文件', 'error');
     return;
   }
 
@@ -860,7 +908,7 @@ async function handleImportFile(file) {
     importProductImages = {};
     renderImportPreview(data);
   } catch (err) {
-    alert('文件解析失败: ' + err.message);
+    showToast('文件解析失败: ' + err.message, 'error');
   }
 }
 
@@ -930,8 +978,11 @@ function handleImportImages(importIdx, input) {
   if (!importProductImages[importIdx]) {
     importProductImages[importIdx] = [];
   }
-  const remaining = 10 - importProductImages[importIdx].length;
-  if (remaining <= 0) return;
+  const remaining = MAX_IMAGES - importProductImages[importIdx].length;
+  if (remaining <= 0) {
+    showToast(`每个产品最多上传 ${MAX_IMAGES} 张图片，已忽略超出部分`, 'warning');
+    return;
+  }
   files.slice(0, remaining).forEach(f => importProductImages[importIdx].push(f));
   input.value = '';
   renderImportImgThumbs(importIdx);
@@ -950,21 +1001,7 @@ function renderImportImgThumbs(importIdx) {
   const imgs = importProductImages[importIdx] || [];
   if (label) label.textContent = imgs.length > 0 ? `${imgs.length} 张` : '上传图片';
 
-  container.innerHTML = '';
-  imgs.forEach((file, i) => {
-    const d = document.createElement('div');
-    d.className = 'mini-thumb';
-    const img = document.createElement('img');
-    img.src = URL.createObjectURL(file);
-    img.onload = () => URL.revokeObjectURL(img.src);
-    const btn = document.createElement('button');
-    btn.className = 'mini-remove';
-    btn.textContent = '\u2715';
-    btn.onclick = ev => { ev.stopPropagation(); removeImportImage(importIdx, i); };
-    d.appendChild(img);
-    d.appendChild(btn);
-    container.appendChild(d);
-  });
+  renderThumbList(container, imgs, 'mini-thumb', 'mini-remove', i => removeImportImage(importIdx, i));
 }
 
 function confirmImport() {
@@ -1012,9 +1049,9 @@ function confirmImport() {
   if (!msg) msg = '没有可导入的产品';
 
   if (importedCount > 0) {
-    alert(msg + '。请切换到各产品标签页检查并补充图片后，点击「批量生成 Listing」。');
+    showToast(msg + '。请切换到各产品标签页检查并补充图片后，点击「批量生成 Listing」。', 'success');
   } else {
-    alert(msg + '。请检查数据校验结果和图片上传情况。');
+    showToast(msg + '。请检查数据校验结果和图片上传情况。', 'warning');
   }
 }
 

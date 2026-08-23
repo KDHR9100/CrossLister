@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -26,6 +27,50 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1")
+
+
+# --------------- Upload limits & sanitisation ---------------
+
+# Per-image and per-import-file size caps (bytes). Generous for real product
+# photos but bounded so a malicious oversized upload can't exhaust memory.
+MAX_IMAGE_BYTES = 20 * 1024 * 1024  # 20 MB per image
+MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024  # 20 MB per CSV/Excel file
+
+# Magic-byte signatures used to confirm an upload is really an image.
+_IMAGE_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"BM", "image/bmp"),
+)
+
+# Secret-looking patterns redacted from error messages before they reach the
+# client. Operational context stays, credentials never do.
+_SK_KEY_RE = re.compile(r"sk-[A-Za-z0-9_\-]{8,}")
+_BEARER_RE = re.compile(r"(?i)bearer\s+[A-Za-z0-9_\-\.=]{8,}")
+_CRED_RE = re.compile(
+    r"(?i)(api[_-]?key|token|secret|password|authorization)\s*[:=]\s*[^\s,;\"']{6,}"
+)
+
+
+def _is_image_bytes(data: bytes) -> bool:
+    """Best-effort check that raw bytes start with a known image signature."""
+    if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
+        return True
+    return any(data.startswith(sig) for sig, _ in _IMAGE_SIGNATURES)
+
+
+def sanitize_error(message: str) -> str:
+    """Redact credentials from an error string while keeping it reportable.
+
+    Ops staff can still screenshot and share the message with engineers, but
+    API keys / bearer tokens never leak to the client.
+    """
+    text = _SK_KEY_RE.sub("[REDACTED_KEY]", message)
+    text = _BEARER_RE.sub("Bearer [REDACTED_KEY]", text)
+    text = _CRED_RE.sub("[REDACTED_CREDENTIAL]", text)
+    return text
 
 
 # --------------- Response models ---------------
@@ -168,10 +213,19 @@ def _parse_extra_info(extra_info: str | None) -> dict | None:
 
 
 def _decode_base64_image(data: str) -> bytes:
-    """Decode a base64 image, stripping data URI prefix if present."""
+    """Decode a base64 image, stripping data URI prefix if present.
+
+    Raises:
+        ValueError: When the payload is oversized or is not a recognised image.
+    """
     if "," in data and data.startswith("data:"):
         data = data.split(",", 1)[1]
-    return base64.b64decode(data)
+    decoded = base64.b64decode(data)
+    if len(decoded) > MAX_IMAGE_BYTES:
+        raise ValueError(f"Image exceeds the {MAX_IMAGE_BYTES // (1024 * 1024)} MB limit.")
+    if not _is_image_bytes(decoded):
+        raise ValueError("Uploaded file is not a recognised image format.")
+    return decoded
 
 
 # --------------- Routes ---------------
@@ -190,7 +244,9 @@ async def list_languages() -> SupportedLanguages:
 
 @router.post("/listing/generate", response_model=ListingResponse, tags=["listing"])
 async def generate(
-    images: list[UploadFile] = File(description="1..5 product images"),
+    images: list[UploadFile] = File(
+        description="Product images; the per-product maximum is controlled by VISION_MAX_IMAGES"
+    ),
     category: str = Form(description="Product category, e.g. '家居收纳'"),
     platform: Platform = Form(default=Platform.AMAZON),
     target_lang: str = Form(default="en"),
@@ -212,9 +268,23 @@ async def generate(
 
     parsed_extra = _parse_extra_info(extra_info)
 
-    image_bytes = [await f.read() for f in images]
-    if any(not data for data in image_bytes):
-        raise HTTPException(status_code=400, detail="Empty image upload detected.")
+    image_bytes: list[bytes] = []
+    for f in images:
+        data = await f.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="Empty image upload detected.")
+        if len(data) > MAX_IMAGE_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image '{f.filename}' exceeds the "
+                f"{MAX_IMAGE_BYTES // (1024 * 1024)} MB limit.",
+            )
+        if not _is_image_bytes(data):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image '{f.filename}' is not a recognised image format.",
+            )
+        image_bytes.append(data)
 
     logger.info(
         "api.generate.request",
@@ -234,9 +304,10 @@ async def generate(
         )
     except Exception as exc:
         logger.error("api.generate.failed", error=str(exc))
+        # Keep the message useful for ops screenshots but strip credentials.
         raise HTTPException(
             status_code=500,
-            detail=f"Listing generation failed: {exc}",
+            detail=sanitize_error(f"Listing generation failed: {exc}"),
         ) from exc
 
 
@@ -287,7 +358,7 @@ async def batch_generate(
             except Exception as exc:
                 return BatchProductResult(
                     product_index=item.product_index,
-                    error=f"Failed to decode image: {exc}",
+                    error=sanitize_error(f"Failed to decode image: {exc}"),
                 )
 
             if any(not data for data in image_bytes):
@@ -318,7 +389,7 @@ async def batch_generate(
             )
             return BatchProductResult(
                 product_index=item.product_index,
-                error=str(exc),
+                error=sanitize_error(str(exc)),
             )
 
     logger.info(
@@ -362,11 +433,21 @@ async def parse_import_file(
     if filename.endswith(".xlsx") or filename.endswith(".xls") or "spreadsheet" in content_type:
         logger.info("api.import.parse.detected_excel", filename=filename)
         content = await file.read()
+        if len(content) > MAX_IMPORT_FILE_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"文件超过 {MAX_IMPORT_FILE_BYTES // (1024 * 1024)} MB 限制",
+            )
         logger.info("api.import.parse.file_read", filename=filename, size_bytes=len(content))
         result = await run_in_threadpool(parse_excel, content)
     elif filename.endswith(".csv") or "csv" in content_type or "text" in content_type:
         logger.info("api.import.parse.detected_csv", filename=filename)
         raw = await file.read()
+        if len(raw) > MAX_IMPORT_FILE_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"文件超过 {MAX_IMPORT_FILE_BYTES // (1024 * 1024)} MB 限制",
+            )
         logger.info("api.import.parse.file_read", filename=filename, size_bytes=len(raw))
         # Try to decode as UTF-8, handle BOM
         try:

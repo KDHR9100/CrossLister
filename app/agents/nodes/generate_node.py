@@ -15,6 +15,7 @@ from app.agents.state import AgentState, GeneratedListing
 from app.config import LLMMode, get_settings
 from app.llm.client import LLMClient
 from app.models.compliance import ComplianceResult
+from app.utils.json_parse import extract_json_object
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -170,22 +171,9 @@ async def _llm_generate(state: AgentState) -> GeneratedListing:
 
 def _parse_listing_json(raw: str) -> GeneratedListing:
     """Parse the LLM reply into a GeneratedListing, tolerant of noise."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        logger.warning("node.generate.parse_failed")
-        return {
-            "title": text[:120] or "Untitled product",
-            "bullet_points": [],
-            "description": text,
-            "backend_keywords": [],
-        }
-    try:
-        data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
+    data = extract_json_object(raw)
+    if data is None:
+        text = raw.strip()
         logger.warning("node.generate.parse_failed")
         return {
             "title": text[:120] or "Untitled product",

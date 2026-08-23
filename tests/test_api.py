@@ -74,15 +74,21 @@ def test_generate_listing_compliance_loop() -> None:
 
 
 def test_generate_rejects_too_many_images() -> None:
-    files = [
-        ("images", (f"img{i}.png", _PNG_1X1, "image/png")) for i in range(6)
-    ]
-    resp = client.post(
-        "/api/v1/listing/generate",
-        files=files,
-        data={"category": "storage organizer"},
-    )
-    assert resp.status_code == 400
+    settings = get_settings()
+    original = settings.vision_max_images
+    settings.vision_max_images = 2
+    try:
+        files = [
+            ("images", (f"img{i}.png", _PNG_1X1, "image/png")) for i in range(3)
+        ]
+        resp = client.post(
+            "/api/v1/listing/generate",
+            files=files,
+            data={"category": "storage organizer"},
+        )
+        assert resp.status_code == 400
+    finally:
+        settings.vision_max_images = original
 
 
 def test_generate_accepts_natural_language_extra_info() -> None:
@@ -119,3 +125,182 @@ def test_rag_rebuild() -> None:
     assert body["status"] == "ok"
     assert set(body["platforms"]) == {"amazon", "shopee", "temu"}
     assert body["total_chunks"] == 30
+
+
+# --------------- Batch generation ---------------
+
+def test_batch_generate_multiple_products() -> None:
+    import base64
+
+    img_b64 = base64.b64encode(_PNG_1X1).decode("utf-8")
+    payload = {
+        "products": [
+            {
+                "product_index": 0,
+                "images_base64": [img_b64],
+                "category": "storage organizer",
+                "platform": "amazon",
+                "target_lang": "en",
+            },
+            {
+                "product_index": 1,
+                "images_base64": [img_b64],
+                "category": "kitchen tools",
+                "platform": "shopee",
+                "target_lang": "en",
+            },
+        ]
+    }
+    resp = client.post("/api/v1/listing/batch_generate", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["results"]) == 2
+    for r in body["results"]:
+        assert r["error"] is None
+        assert r["listing"]["title"]
+        assert r["listing"]["compliance"]["passed"] is True
+
+
+def test_batch_generate_requires_products() -> None:
+    resp = client.post("/api/v1/listing/batch_generate", json={"products": []})
+    assert resp.status_code == 400
+
+
+def test_batch_generate_reports_invalid_platform() -> None:
+    import base64
+
+    img_b64 = base64.b64encode(_PNG_1X1).decode("utf-8")
+    payload = {
+        "products": [
+            {
+                "product_index": 0,
+                "images_base64": [img_b64],
+                "category": "storage organizer",
+                "platform": "ebay",
+                "target_lang": "en",
+            }
+        ]
+    }
+    resp = client.post("/api/v1/listing/batch_generate", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["results"][0]["listing"] is None
+    assert "platform" in body["results"][0]["error"].lower()
+
+
+def test_batch_generate_reports_missing_images() -> None:
+    payload = {
+        "products": [
+            {
+                "product_index": 0,
+                "images_base64": [],
+                "category": "storage organizer",
+                "platform": "amazon",
+                "target_lang": "en",
+            }
+        ]
+    }
+    resp = client.post("/api/v1/listing/batch_generate", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["results"][0]["listing"] is None
+    assert body["results"][0]["error"]
+
+
+def test_batch_generate_rejects_non_image_base64() -> None:
+    import base64
+
+    # Plain text bytes are not a recognised image signature.
+    bad_b64 = base64.b64encode(b"this is definitely not an image").decode("utf-8")
+    payload = {
+        "products": [
+            {
+                "product_index": 0,
+                "images_base64": [bad_b64],
+                "category": "storage organizer",
+                "platform": "amazon",
+                "target_lang": "en",
+            }
+        ]
+    }
+    resp = client.post("/api/v1/listing/batch_generate", json=payload)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["results"][0]["listing"] is None
+    assert body["results"][0]["error"]
+
+
+def test_generate_rejects_non_image_upload() -> None:
+    resp = client.post(
+        "/api/v1/listing/generate",
+        files=[("images", ("evil.png", b"not-an-image-payload", "image/png"))],
+        data={"category": "storage organizer"},
+    )
+    assert resp.status_code == 400
+
+
+# --------------- Batch import ---------------
+
+def test_import_template_download() -> None:
+    resp = client.get("/api/v1/import/template")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    text = resp.content.decode("utf-8")
+    # BOM for Excel compatibility + the required header columns.
+    assert text.startswith("\ufeff")
+    for col in ("商品类目", "目标平台", "目标语言"):
+        assert col in text
+
+
+def test_import_parse_csv_valid() -> None:
+    csv_text = "商品类目,目标平台,目标语言,补充信息\n收纳盒,amazon,en,brand:ACME\n水杯,shopee,zh,\n"
+    resp = client.post(
+        "/api/v1/import/parse",
+        files=[("file", ("products.csv", csv_text.encode("utf-8"), "text/csv"))],
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_rows"] == 2
+    assert body["valid_count"] == 2
+    assert body["error_count"] == 0
+    assert body["products"][0]["category"] == "收纳盒"
+    assert body["products"][1]["platform"] == "shopee"
+
+
+def test_import_parse_csv_reports_row_errors() -> None:
+    csv_text = "商品类目,目标平台,目标语言,补充信息\n,amazon,en,\n水杯,ebay,xx,\n"
+    resp = client.post(
+        "/api/v1/import/parse",
+        files=[("file", ("products.csv", csv_text.encode("utf-8"), "text/csv"))],
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_rows"] == 2
+    assert body["valid_count"] == 0
+    assert body["error_count"] == 2
+    # Row 2: empty category; Row 3: bad platform + bad language.
+    assert body["products"][0]["is_valid"] is False
+    assert body["products"][0]["errors"]
+    assert body["products"][1]["is_valid"] is False
+    assert len(body["products"][1]["errors"]) >= 2
+
+
+def test_import_parse_unsupported_format() -> None:
+    resp = client.post(
+        "/api/v1/import/parse",
+        files=[("file", ("data.bin", b"\x00\x01\x02", "application/octet-stream"))],
+    )
+    assert resp.status_code == 400
+
+
+def test_import_parse_text_file_treated_as_csv_reports_missing_columns() -> None:
+    # text/* uploads fall back to CSV parsing and report missing columns
+    # rather than being hard-rejected, so users get actionable feedback.
+    resp = client.post(
+        "/api/v1/import/parse",
+        files=[("file", ("data.txt", b"plain text", "text/plain"))],
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_rows"] == 0
+    assert body["file_errors"]

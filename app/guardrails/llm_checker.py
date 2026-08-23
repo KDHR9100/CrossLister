@@ -8,11 +8,11 @@ always passes, keeping the pipeline fully offline.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from app.config import LLMMode, Settings, get_settings
 from app.llm.client import LLMClient
+from app.utils.json_parse import extract_json_object
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -89,22 +89,8 @@ async def check_listing(
 
 def _parse_checker_json(raw: str) -> dict[str, Any]:
     """Parse the checker reply, tolerating fenced or noisy JSON output."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        # Drop a possible leading language tag line.
-        if "\n" in text:
-            first_line, rest = text.split("\n", 1)
-            if ":" not in first_line and not first_line.startswith("{"):
-                text = rest
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        logger.warning("guardrails.llm_checker.parse_failed")
-        return {"passed": True, "violations": [], "suggestions": []}
-    try:
-        data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
+    data = extract_json_object(raw)
+    if data is None:
         logger.warning("guardrails.llm_checker.parse_failed")
         return {"passed": True, "violations": [], "suggestions": []}
     return {

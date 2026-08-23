@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+import threading
 from dataclasses import dataclass
 
 from app.config import EmbeddingMode, Settings, get_settings
@@ -32,19 +33,33 @@ _MOCK_DIM = 384
 
 # -- Singleton lazy-loaded sentence-transformers model ----------------------
 _st_model = None
+# Guards concurrent first-time loading of the embedding model and Chroma client.
+_MODEL_LOCK = threading.Lock()
+
+# Cache of Chroma persistent clients keyed by persist directory.
+_CHROMA_CLIENTS: dict[str, object] = {}
+_CHROMA_LOCK = threading.Lock()
 
 
 def _get_st_model(model_path: str):
-    """Return a cached SentenceTransformer instance (loaded on first call)."""
-    global _st_model
-    if _st_model is None:
-        import torch
-        from sentence_transformers import SentenceTransformer
+    """Return a cached SentenceTransformer instance (loaded on first call).
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info("embedding.loading_model", path=model_path, device=device)
-        _st_model = SentenceTransformer(model_path, device=device)
-        logger.info("embedding.model_loaded", path=model_path, device=device)
+    A lock guards the first-time load so concurrent requests cannot each
+    trigger a separate (expensive) model initialisation.
+    """
+    global _st_model
+    if _st_model is not None:
+        return _st_model
+    with _MODEL_LOCK:
+        # Re-check inside the lock (another thread may have loaded it already).
+        if _st_model is None:
+            import torch
+            from sentence_transformers import SentenceTransformer
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info("embedding.loading_model", path=model_path, device=device)
+            _st_model = SentenceTransformer(model_path, device=device)
+            logger.info("embedding.model_loaded", path=model_path, device=device)
     return _st_model
 
 
@@ -115,6 +130,10 @@ class IndexStats:
 def get_chroma_client(settings: Settings):
     """Open an embedded persistent Chroma client rooted at the data dir.
 
+    The client is cached per persist directory so repeated calls (and separate
+    retriever/indexer instances) reuse the same open store instead of reopening
+    file handles each time.
+
     Telemetry is explicitly disabled, which suits a self-hosted tool and also
     avoids noisy posthog errors in restricted environments.
     """
@@ -122,10 +141,20 @@ def get_chroma_client(settings: Settings):
     from chromadb.config import Settings as ChromaSettings
 
     settings.chroma_persist_dir.mkdir(parents=True, exist_ok=True)
-    chroma_settings = ChromaSettings(anonymized_telemetry=False)
-    return chromadb.PersistentClient(
-        path=str(settings.chroma_persist_dir), settings=chroma_settings
-    )
+    path = str(settings.chroma_persist_dir)
+
+    cached = _CHROMA_CLIENTS.get(path)
+    if cached is not None:
+        return cached
+
+    with _CHROMA_LOCK:
+        # Re-check inside the lock (another thread may have created it).
+        if path not in _CHROMA_CLIENTS:
+            chroma_settings = ChromaSettings(anonymized_telemetry=False)
+            _CHROMA_CLIENTS[path] = chromadb.PersistentClient(
+                path=path, settings=chroma_settings
+            )
+    return _CHROMA_CLIENTS[path]
 
 
 def build_index(

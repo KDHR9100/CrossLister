@@ -51,7 +51,29 @@ def _make_test_png(width=64, height=64):
 
 TEST_IMAGE = _make_test_png(64, 64)
 
-API_BASE = "http://127.0.0.1:8080"
+# API server base URL; override via the API_BASE env var if needed.
+API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8080")
+
+
+def _try_parse_json(raw: str) -> tuple[bool, dict]:
+    """Best-effort extraction of a JSON object from raw model text.
+
+    Mirrors the tolerant parsing used in the app (code-fence and stray-prose
+    tolerant). Returns (parse_ok, data) where data is {} when parsing fails.
+    """
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return False, {}
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return False, {}
+    if not isinstance(data, dict):
+        return False, {}
+    return True, data
 
 
 @dataclass
@@ -209,18 +231,7 @@ async def test_llm_model():
         latency = int((time.perf_counter() - t0) * 1000)
 
         # Try to parse JSON from response
-        text = raw.strip()
-        if text.startswith("```"):
-            text = text.strip("`")
-        start = text.find("{")
-        end = text.rfind("}")
-        parse_ok = start != -1 and end > start
-        data = {}
-        if parse_ok:
-            try:
-                data = json.loads(text[start:end+1])
-            except json.JSONDecodeError:
-                parse_ok = False
+        parse_ok, data = _try_parse_json(raw)
 
         has_title = bool(data.get("title"))
         has_bullets = isinstance(data.get("bullet_points"), list) and len(data.get("bullet_points", [])) >= 1
@@ -260,16 +271,7 @@ async def test_llm_model():
         raw_c = await client.chat(system_c, user_c, temperature=0.0)
         latency = int((time.perf_counter() - t0) * 1000)
 
-        text_c = raw_c.strip()
-        start_c = text_c.find("{")
-        end_c = text_c.rfind("}")
-        parse_ok_c = start_c != -1 and end_c > start_c
-        data_c = {}
-        if parse_ok_c:
-            try:
-                data_c = json.loads(text_c[start_c:end_c+1])
-            except json.JSONDecodeError:
-                parse_ok_c = False
+        parse_ok_c, data_c = _try_parse_json(raw_c)
 
         has_passed = "passed" in data_c
         has_violations = isinstance(data_c.get("violations"), list)
@@ -307,16 +309,7 @@ async def test_llm_model():
         raw_t = await client.chat(system_t, user_t, temperature=0.1)
         latency = int((time.perf_counter() - t0) * 1000)
 
-        text_t = raw_t.strip()
-        start_t = text_t.find("{")
-        end_t = text_t.rfind("}")
-        parse_ok_t = start_t != -1 and end_t > start_t
-        data_t = {}
-        if parse_ok_t:
-            try:
-                data_t = json.loads(text_t[start_t:end_t+1])
-            except json.JSONDecodeError:
-                parse_ok_t = False
+        parse_ok_t, data_t = _try_parse_json(raw_t)
 
         # Check if Chinese characters appear (translation quality)
         title_t = data_t.get("title", "")
@@ -628,7 +621,7 @@ async def test_e2e_api():
             error=str(e),
         ))
 
-    # 6f. Error handling: invalid extra_info
+    # 6f. Natural-language extra_info is accepted (not rejected as bad JSON)
     t0 = time.perf_counter()
     try:
         async with httpx.AsyncClient() as c:
@@ -639,16 +632,18 @@ async def test_e2e_api():
                 timeout=10,
             )
         latency = int((time.perf_counter() - t0) * 1000)
-        ok = resp.status_code == 400
+        # Non-JSON extra_info is wrapped as natural language, so it must NOT
+        # be rejected as invalid input (400/422).
+        ok = resp.status_code not in (400, 422)
         report.add(TestResult(
-            name="E2E API: error handling (bad JSON)",
+            name="E2E API: natural-language extra_info accepted",
             passed=ok,
             latency_ms=latency,
-            details=f"status={resp.status_code} (expected 400)",
+            details=f"status={resp.status_code} (expected not 400/422)",
         ))
     except Exception as e:
         report.add(TestResult(
-            name="E2E API: error handling (bad JSON)",
+            name="E2E API: natural-language extra_info accepted",
             passed=False,
             error=str(e),
         ))

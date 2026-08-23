@@ -21,6 +21,8 @@ dependencies = [
     # positional argument" errors. Pin to the pre-6.0 API.
     "posthog>=2.4.0,<6",
     "openpyxl>=3.1",
+    # Optional PDF rule-document support (app/rag/loader.py imports lazily).
+    "pypdf>=4.0",
 ]
 
 [dependency-groups]

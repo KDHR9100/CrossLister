@@ -26,6 +26,22 @@ class LLMClient:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
+        # Lazily-created and cached OpenAI client so the HTTP connection pool
+        # is reused across calls instead of being rebuilt every request.
+        self._client = None
+
+    def _get_client(self):
+        """Return a cached AsyncOpenAI client, building it on first use."""
+        if self._client is None:
+            from openai import AsyncOpenAI
+
+            s = self._settings
+            self._client = AsyncOpenAI(
+                base_url=s.llm_api_base,
+                api_key=s.llm_api_key or "EMPTY",
+                timeout=s.llm_timeout_s,
+            )
+        return self._client
 
     @property
     def mode(self) -> LLMMode:
@@ -66,15 +82,8 @@ class LLMClient:
                 "mock branch themselves."
             )
 
-        # Lazy import so mock mode works without the `openai` package.
-        from openai import AsyncOpenAI
-
         s = self._settings
-        client = AsyncOpenAI(
-            base_url=s.llm_api_base,
-            api_key=s.llm_api_key or "EMPTY",
-            timeout=s.llm_timeout_s,
-        )
+        client = self._get_client()
 
         started = time.perf_counter()
         logger.info("llm.request", model=s.llm_model)

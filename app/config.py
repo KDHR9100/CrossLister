@@ -62,7 +62,6 @@ class Settings(BaseSettings):
 
     # -- Application ---------------------------------------------------
     app_name: str = "CrossLister"
-    app_version: str = "0.1.0"
     debug: bool = False
 
     # -- Vision model --------------------------------------------------
@@ -70,7 +69,7 @@ class Settings(BaseSettings):
     vision_api_base: str = "http://localhost:8000/v1"
     vision_api_key: str = "EMPTY"
     vision_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"
-    vision_max_images: int = 5
+    vision_max_images: int = 20
     vision_timeout_s: float = 120.0
 
     # -- Text LLM (listing generation / compliance check) --------------

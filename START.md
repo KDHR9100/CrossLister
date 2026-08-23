@@ -73,15 +73,18 @@ EMBEDDING_LOCAL_MODEL_PATH=/path/to/your/embedding/model
 ### 3. 启动服务
 
 ```bash
-# 使用 conda 环境启动（推荐）
-/home/huajuanx/miniconda3/envs/crosslister/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+# 先激活对应的虚拟环境，再启动（三选一，取决于上面的安装方式）
+conda activate crosslister   # Conda
+source .venv/bin/activate    # venv（Linux/macOS）
 
-# 或者先激活 conda 环境再启动
-conda activate crosslister
+# 启动服务
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 # 开发模式（支持热重载）
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+
+# 使用 uv 时（无需手动激活环境）
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 ### 4. 验证服务

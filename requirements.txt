@@ -15,6 +15,8 @@ torch>=2.1
 sentence-transformers>=2.7
 posthog>=2.4.0,<6
 openpyxl>=3.1
+# Enables PDF platform-rule documents (app/rag/loader.py); safe to remove if unused.
+pypdf>=4.0
 
 # Development dependencies
 pytest>=8.2

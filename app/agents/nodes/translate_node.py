@@ -11,11 +11,10 @@ the whole pipeline runs offline.
 
 from __future__ import annotations
 
-import json
-
 from app.agents.state import AgentState, GeneratedListing
 from app.config import LLMMode, get_settings
 from app.llm.client import LLMClient
+from app.utils.json_parse import extract_json_object
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -114,17 +113,8 @@ async def translate_node(state: AgentState) -> dict:
 
 def _parse_translation_json(raw: str) -> dict | None:
     """Parse the translator reply; return None when unparseable."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        logger.warning("node.translate.parse_failed")
-        return None
-    try:
-        data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
+    data = extract_json_object(raw)
+    if data is None:
         logger.warning("node.translate.parse_failed")
         return None
     return {

@@ -7,9 +7,9 @@ the local vLLM mode and any OpenAI-Vision compatible cloud endpoint.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
+from app.utils.json_parse import extract_json_object
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -110,28 +110,9 @@ def parse_vision_json(raw: str) -> dict[str, Any]:
     Args:
         raw: Raw text content returned by the vision model.
     """
-    if not raw:
-        return {}
-
-    text = raw.strip()
-    # Strip ```json ... ``` fences if present.
-    if text.startswith("```"):
-        text = text.strip("`").strip()
-        if text.lower().startswith("json"):
-            text = text[4:].strip()
-
-    # Isolate the outermost JSON object.
-    start, end = text.find("{"), text.rfind("}")
-    if start != -1 and end > start:
-        text = text[start : end + 1]
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        logger.warning("vision.parse_failed", preview=raw[:300])
-        return {}
-
-    if not isinstance(data, dict):
+    data = extract_json_object(raw)
+    if data is None:
+        logger.warning("vision.parse_failed", preview=(raw or "")[:300])
         return {}
 
     # Keep only the known fields so downstream validation never breaks.

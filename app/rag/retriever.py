@@ -54,6 +54,9 @@ class RuleRetriever:
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
         self._embedder = Embedder(self._settings)
+        # Cache the persistent Chroma client so we don't reopen the store and
+        # its file handles on every retrieve() call.
+        self._client = get_chroma_client(self._settings)
 
     def retrieve(
         self,
