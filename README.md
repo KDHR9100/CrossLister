@@ -13,11 +13,13 @@
 ## ✨ 核心特性
 
 - **多模态理解**：用 Qwen2.5-VL-7B 从 1–5 张商品图中提取类目、颜色、材质、卖点与使用场景。
+- **多产品并发处理**：支持同时录入多个产品，批量生成 Listing，所有产品并发处理。
+- **批量导入**：通过 CSV/Excel 模板文件一次性导入多个产品信息，自动校验并提示错误。
 - **平台规则 RAG**：内置 Amazon / Shopee / Temu 规则文档，用 Qwen3-Embedding-0.6B 向量化后按平台
   分 collection 存入 ChromaDB，按商品语义检索最相关的规则条目喂给生成模型。
 - **自研合规护栏**：先做确定性的分平台违禁词扫描，再由 LLM 做语义复核；
   不合格则带着违规点**回到生成节点重写，最多循环 3 次**。
-- **多语言输出**：通过合规后的 Listing 可翻译成目标语言，保持营销语气与结构。
+- **多语言输出 + 中文翻译**：通过合规后的 Listing 生成目标语言内容，并附带严格对照的中文翻译。
 - **三档运行模式**：`mock`（离线可跑，零依赖零网络）/ `local`（自托管 vLLM）/ `api`
   （任意 OpenAI 兼容端点），开发、测试、生产无缝切换。
 - **极简依赖**：核心只依赖 FastAPI + LangGraph + ChromaDB + openai SDK，不绑死任何云厂商。
@@ -38,7 +40,7 @@ flowchart LR
         R[rag 节点<br/>Qwen3-Embedding-0.6B + ChromaDB<br/>检索平台规则]
         G[generate 节点<br/>Qwen2.5-7B<br/>起草 Listing]
         C{guardrails 节点<br/>违禁词 + LLM 复核}
-        T[translate 节点<br/>多语言本地化]
+        T[translate 节点<br/>多语言 + 中文翻译]
     end
 
     IMG --> V
@@ -49,7 +51,7 @@ flowchart LR
     G --> C
     C -- 不通过且未超重试上限 --> G
     C -- 通过 --> T
-    T --> OUT[ListingResponse<br/>标题/五点/描述/后台词/合规报告]
+    T --> OUT[ListingResponse<br/>标题/五点/描述/后台词/合规报告/中文翻译]
 ```
 
 关键实现点：
@@ -60,7 +62,7 @@ flowchart LR
 | 视觉 | OpenAI Vision 协议 | vLLM / 云端 API 共用一条代码路径 |
 | 检索 | ChromaDB（嵌入式持久化） | 每平台一个 collection，按规则条目分 chunk |
 | Embedding | Qwen3-Embedding-0.6B（OpenAI 兼容 `/embeddings`） | 或离线 mock embedder |
-| 服务 | FastAPI + Pydantic v2 | multipart 上传，结构化校验 |
+| 服务 | FastAPI + Pydantic v2 | multipart 上传，结构化校验，并发处理 |
 | 日志 | structlog | JSON 结构化输出 |
 
 ---
@@ -102,7 +104,39 @@ uv run python scripts/build_index.py
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
-### 5. 调用 API
+### 5. 使用 Web 界面
+
+打开浏览器访问 `http://localhost:8080`，即可看到中文操作界面。
+
+#### 手动录入
+
+- 点击「+ 添加产品」可添加多个产品标签页
+- 每个产品独立配置：商品图片、类目、目标平台、目标语言、补充信息
+- 补充信息支持 **JSON 格式** 或 **自然语言** 两种输入方式
+- 点击「批量生成 Listing」并发处理所有产品
+
+#### 批量导入
+
+1. 点击「批量导入」按钮
+2. 点击「下载导入模板」获取 CSV 模板
+3. 按模板格式填写产品信息（每行一个产品）
+4. 上传 CSV 或 Excel 文件
+5. 系统自动解析并校验，预览表格中标记错误行
+6. 为每个产品上传商品图片
+7. 点击「确认导入」将产品添加到录入列表
+
+模板字段说明：
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| 商品类目 | 是 | 产品所属分类，如 `Home & Kitchen > Storage` |
+| 目标平台 | 是 | 可选值：`amazon` / `shopee` / `temu` |
+| 目标语言 | 是 | 可选值：`en` `zh` `ja` `ko` `es` `fr` `de` `pt` `th` `vi` `id` `ms` |
+| 补充信息 | 否 | JSON 格式或自然语言描述 |
+
+### 6. 调用 API
+
+**单个产品生成：**
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/listing/generate \
@@ -112,7 +146,45 @@ curl -X POST http://localhost:8080/api/v1/listing/generate \
   -F "target_lang=en"
 ```
 
-返回结构化的标题、五点描述、长描述、后台关键词、合规报告与视觉分析结果。
+**多产品并发生成：**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/listing/batch_generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "products": [
+      {
+        "product_index": 0,
+        "images_base64": ["data:image/png;base64,iVBOR..."],
+        "category": "storage organizer",
+        "platform": "amazon",
+        "target_lang": "en"
+      },
+      {
+        "product_index": 1,
+        "images_base64": ["data:image/png;base64,iVBOR..."],
+        "category": "electronics",
+        "platform": "shopee",
+        "target_lang": "zh"
+      }
+    ]
+  }'
+```
+
+**批量导入模板下载：**
+
+```bash
+curl -O http://localhost:8080/api/v1/import/template
+```
+
+**批量导入文件解析：**
+
+```bash
+curl -X POST http://localhost:8080/api/v1/import/parse \
+  -F "file=@./products.csv"
+```
+
+返回解析结果，包含每行产品的校验状态和错误详情。
 
 交互式 API 文档：打开 `http://localhost:8080/docs`。
 
@@ -145,11 +217,30 @@ curl -X POST http://localhost:8080/api/v1/listing/generate \
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/v1/health` | 健康检查，返回各模块当前模式 |
-| POST | `/api/v1/listing/generate` | multipart 上传图片 + 表单字段，生成合规 Listing |
+| GET | `/api/v1/platforms` | 返回支持的平台列表 |
+| GET | `/api/v1/languages` | 返回支持的 12 种目标语言 |
+| POST | `/api/v1/listing/generate` | 单个产品：multipart 上传图片 + 表单字段，生成合规 Listing |
+| POST | `/api/v1/listing/batch_generate` | 多产品并发：JSON body 传入多个产品，并发生成 Listing |
+| GET | `/api/v1/import/template` | 下载批量导入 CSV 模板 |
+| POST | `/api/v1/import/parse` | 解析 CSV/Excel 文件，返回校验结果 |
 | POST | `/api/v1/rag/rebuild` | 重建平台规则向量索引 |
 
-`/listing/generate` 表单字段：`images`（1–5 张）、`category`、`platform`
-（`amazon`/`shopee`/`temu`）、`target_lang`、`extra_info`（可选 JSON）。
+### 响应字段说明
+
+`/listing/generate` 和 `/listing/batch_generate` 返回的 Listing 包含：
+
+| 字段 | 说明 |
+|------|------|
+| `title` | 目标语言标题 |
+| `title_zh` | 中文翻译标题 |
+| `bullet_points` | 目标语言五点描述 |
+| `bullet_points_zh` | 中文翻译五点描述 |
+| `description` | 目标语言商品描述 |
+| `description_zh` | 中文翻译商品描述 |
+| `backend_keywords` | 后台关键词 |
+| `compliance` | 合规审核报告 |
+| `visual_analysis` | 视觉分析结果 |
+| `metadata` | 生成元数据（模型、耗时、RAG 检索数） |
 
 ---
 
@@ -165,6 +256,7 @@ curl -X POST http://localhost:8080/api/v1/listing/generate \
 | 成本 | 一次部署，边际成本≈电费/自有算力 | 按席位/订阅持续付费 |
 | 平台规则 | 规则文档在本地，可自改可扩展 | 黑盒，无法审计 |
 | 二次开发 | 任意改流水线、加平台、加节点 | 不可定制 |
+| 批量处理 | 支持多产品并发生成 + CSV/Excel 批量导入 | 通常逐个处理 |
 | 开箱即用 | 需要一定部署能力 | 注册即用 |
 
 一句话：**要省事选 SaaS；要数据主权、可控成本与可定制性，选 CrossLister。**
@@ -190,7 +282,9 @@ uv run pytest -q
 CrossLister/
 ├── app/
 │   ├── agents/            # LangGraph 图与各节点（vision/rag/generate/guardrails/translate）
-│   ├── api/               # FastAPI 路由
+│   ├── api/               # FastAPI 路由 + 批量导入模块
+│   │   ├── routes.py      # API 端点定义
+│   │   └── batch_import.py # CSV/Excel 解析与校验
 │   ├── guardrails/        # 违禁词过滤 + LLM 合规复核
 │   ├── llm/               # 共享文本 LLM 客户端
 │   ├── models/            # Pydantic 数据模型
@@ -201,7 +295,8 @@ CrossLister/
 │   ├── platform_rules/    # Amazon / Shopee / Temu 规则文档
 │   └── chroma/            # 向量库持久化目录（git 忽略）
 ├── scripts/build_index.py # 索引构建 CLI
-├── tests/                 # 离线测试
+├── static/index.html      # 前端单页面（中文界面）
+├── tests/                 # 离线测试 + 测试数据
 ├── .env.example           # 配置模板（复制为 .env）
 └── docker-compose.yml     # API + 预留 vLLM GPU 服务
 ```
@@ -211,4 +306,3 @@ CrossLister/
 ## 📄 License
 
 本项目基于 [Apache License 2.0](./LICENSE) 开源。欢迎提 Issue 与 PR。
-
