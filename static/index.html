@@ -71,6 +71,70 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .json-guide pre{background:var(--bg);padding:.5rem;border-radius:6px;overflow-x:auto;font-size:.75rem;margin:.3rem 0;border:1px solid var(--border)}
 .json-guide .guide-text{color:var(--text-secondary);margin-bottom:.3rem}
 
+/* Action buttons row */
+.action-row{display:flex;gap:.5rem;margin-bottom:1rem}
+.btn-secondary{flex:1;padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:8px;background:var(--card);font-size:.82rem;font-weight:500;cursor:pointer;color:var(--text-secondary);transition:all .15s;display:flex;align-items:center;justify-content:center;gap:.3rem}
+.btn-secondary:hover{border-color:var(--primary);color:var(--primary);background:rgba(108,92,231,.03)}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center;padding:1rem}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow-lg);width:100%;max-width:900px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:1.2rem 1.5rem;border-bottom:1px solid var(--border)}
+.modal-header h2{font-size:1.1rem;font-weight:600}
+.modal-close{width:28px;height:28px;border-radius:6px;border:none;background:transparent;cursor:pointer;font-size:1.1rem;color:var(--text-secondary);display:flex;align-items:center;justify-content:center}
+.modal-close:hover{background:var(--bg);color:var(--text)}
+.modal-body{flex:1;overflow-y:auto;padding:1.5rem}
+.modal-footer{padding:1rem 1.5rem;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:.5rem}
+
+/* Import modal specifics */
+.import-upload-area{border:2px dashed var(--border);border-radius:var(--radius);padding:2rem;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg);position:relative}
+.import-upload-area:hover,.import-upload-area.dragover{border-color:var(--primary);background:rgba(108,92,231,.03)}
+.import-upload-area .upload-icon{font-size:2.5rem;margin-bottom:.5rem}
+.import-upload-area input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.import-actions{display:flex;gap:.8rem;margin-top:1rem;justify-content:center}
+.import-actions a,.import-actions button{font-size:.82rem;color:var(--primary);text-decoration:none;cursor:pointer;background:none;border:none;font-family:inherit}
+.import-actions a:hover,.import-actions button:hover{text-decoration:underline}
+
+/* Preview table */
+.preview-table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:1rem}
+.preview-table th{background:var(--bg);padding:.5rem .6rem;text-align:left;font-weight:600;color:var(--text-secondary);border-bottom:2px solid var(--border);white-space:nowrap}
+.preview-table td{padding:.5rem .6rem;border-bottom:1px solid var(--border);vertical-align:top}
+.preview-table tr:hover{background:rgba(108,92,231,.02)}
+.preview-table .row-error{background:rgba(239,68,68,.04)}
+.preview-table .row-valid{background:rgba(16,185,129,.02)}
+.preview-table .error-text{color:var(--danger);font-size:.75rem}
+.preview-table .status-badge{display:inline-block;padding:.15rem .5rem;border-radius:10px;font-size:.72rem;font-weight:600}
+.preview-table .status-badge.ok{background:rgba(16,185,129,.1);color:var(--success)}
+.preview-table .status-badge.err{background:rgba(239,68,68,.1);color:var(--danger)}
+
+/* Image upload cell in preview table */
+.img-upload-cell{min-width:120px}
+.img-upload-btn{display:inline-flex;align-items:center;gap:.2rem;padding:.2rem .5rem;border-radius:6px;border:1px dashed var(--border);background:var(--bg);font-size:.72rem;color:var(--text-secondary);cursor:pointer;transition:all .15s}
+.img-upload-btn:hover{border-color:var(--primary);color:var(--primary)}
+.img-thumbs{display:flex;gap:.2rem;flex-wrap:wrap;margin-top:.3rem}
+.img-thumbs .mini-thumb{width:32px;height:32px;border-radius:4px;overflow:hidden;position:relative;border:1px solid var(--border)}
+.img-thumbs .mini-thumb img{width:100%;height:100%;object-fit:cover}
+.img-thumbs .mini-thumb .mini-remove{position:absolute;top:0;right:0;width:12px;height:12px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:none;cursor:pointer;font-size:.5rem;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
+.img-thumbs .mini-thumb:hover .mini-remove{opacity:1}
+
+/* Import summary */
+.import-summary{display:flex;gap:1.5rem;padding:1rem;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:1rem;flex-wrap:wrap}
+.import-summary .summary-item{font-size:.85rem}
+.import-summary .summary-item .num{font-weight:700;font-size:1.1rem}
+.import-summary .summary-item.success .num{color:var(--success)}
+.import-summary .summary-item.error .num{color:var(--danger)}
+
+/* Guide modal */
+.guide-content{font-size:.88rem;line-height:1.8;color:var(--text)}
+.guide-content h3{font-size:.95rem;font-weight:600;color:var(--primary);margin:1.2rem 0 .5rem;padding-bottom:.3rem;border-bottom:1px solid var(--border)}
+.guide-content h3:first-child{margin-top:0}
+.guide-content ol,.guide-content ul{padding-left:1.5rem;margin:.5rem 0}
+.guide-content li{margin:.3rem 0}
+.guide-content code{background:var(--bg);padding:.1rem .3rem;border-radius:4px;font-size:.82rem;border:1px solid var(--border)}
+.guide-content pre{background:var(--bg);padding:.8rem;border-radius:8px;overflow-x:auto;font-size:.8rem;margin:.5rem 0;border:1px solid var(--border)}
+.guide-content .note{background:rgba(108,92,231,.05);border:1px solid rgba(108,92,231,.15);border-radius:8px;padding:.8rem;margin:.8rem 0;font-size:.82rem;color:var(--text-secondary)}
+
 /* Results */
 .results-panel{display:flex;flex-direction:column;gap:1.2rem}
 .result-tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem}
@@ -112,7 +176,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .footer a{color:var(--primary);text-decoration:none}
 .footer a:hover{text-decoration:underline}
 .zh-label{display:inline-block;font-size:.72rem;color:var(--primary);background:rgba(108,92,231,.08);padding:.1rem .4rem;border-radius:4px;margin-bottom:.2rem;font-weight:500}
-@media(max-width:960px){.main{grid-template-columns:1fr}.pipeline{gap:.2rem;padding:1rem .5rem}.pipeline-step{font-size:.78rem;padding:.4rem .5rem}.pipeline-arrow{font-size:.9rem}}
+@media(max-width:960px){.main{grid-template-columns:1fr}.pipeline{gap:.2rem;padding:1rem .5rem}.pipeline-step{font-size:.78rem;padding:.4rem .5rem}.pipeline-arrow{font-size:.9rem}.modal{max-width:100%}}
 @media(max-width:600px){.header h1{font-size:1.5rem}.main{padding:1rem;gap:1rem}.visual-grid{grid-template-columns:1fr 1fr}.metadata-bar{flex-direction:column;gap:.5rem}}
 </style>
 </head>
@@ -145,6 +209,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 <button class="product-tab-add" onclick="addProduct()" title="添加新产品">+ 添加产品</button>
 </div>
 
+<!-- Action Row -->
+<div class="action-row">
+<button class="btn-secondary" onclick="openImportModal()" title="通过 CSV/Excel 批量导入产品">&#128196; 批量导入</button>
+<button class="btn-secondary" onclick="openGuideModal()" title="查看操作指南">&#128214; 操作指南</button>
+</div>
+
 <!-- Product Form Container -->
 <div id="productForms">
 <!-- Product form will be rendered here by JS -->
@@ -164,6 +234,108 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 </div>
 </div>
 </main>
+
+<!-- Batch Import Modal -->
+<div class="modal-overlay" id="importModal">
+<div class="modal">
+<div class="modal-header">
+<h2>&#128196; 批量导入产品</h2>
+<button class="modal-close" onclick="closeImportModal()">&times;</button>
+</div>
+<div class="modal-body" id="importModalBody">
+<!-- Step 1: Upload -->
+<div id="importStep1">
+<div class="import-upload-area" id="importUploadArea">
+<div class="upload-icon">&#128194;</div>
+<div class="upload-text">点击或拖拽 CSV / Excel 文件到此处</div>
+<div class="upload-hint">支持 .csv / .xlsx / .xls 格式</div>
+<input type="file" id="importFileInput" accept=".csv,.xlsx,.xls">
+</div>
+<div class="import-actions">
+<a href="/api/v1/import/template" download="product_import_template.csv">&#11015; 下载导入模板</a>
+<button onclick="openGuideModal()">&#128214; 查看操作指南</button>
+</div>
+</div>
+<!-- Step 2: Preview -->
+<div id="importStep2" style="display:none">
+<div class="import-summary" id="importSummary"></div>
+<div id="importErrors"></div>
+<div style="overflow-x:auto">
+<table class="preview-table" id="previewTable"></table>
+</div>
+</div>
+</div>
+<div class="modal-footer" id="importModalFooter">
+<button class="btn-secondary" id="importBackBtn" style="display:none;flex:none;width:auto" onclick="importGoBack()">&#8592; 重新上传</button>
+<button class="btn-generate" id="importConfirmBtn" style="display:none;width:auto;padding:.5rem 1.5rem;margin-top:0" onclick="confirmImport()">&#10003; 确认导入</button>
+</div>
+</div>
+</div>
+
+<!-- Guide Modal -->
+<div class="modal-overlay" id="guideModal">
+<div class="modal">
+<div class="modal-header">
+<h2>&#128214; 批量导入操作指南</h2>
+<button class="modal-close" onclick="closeGuideModal()">&times;</button>
+</div>
+<div class="modal-body">
+<div class="guide-content">
+<h3>一、功能说明</h3>
+<p>批量导入功能允许您通过 CSV 或 Excel 表格文件一次性导入多个产品信息，无需逐个手动录入。每个表格行对应一个产品。</p>
+
+<h3>二、操作步骤</h3>
+<ol>
+<li><strong>下载模板文件</strong>：点击「下载导入模板」获取标准 CSV 模板</li>
+<li><strong>填写产品信息</strong>：按模板格式填写每个产品的信息，每行一个产品</li>
+<li><strong>上传文件</strong>：将填好的 CSV/Excel 文件拖拽或点击上传</li>
+<li><strong>预览与校验</strong>：系统自动解析并校验数据，标记错误行</li>
+<li><strong>上传图片</strong>：为每个产品上传对应的商品图片</li>
+<li><strong>确认导入</strong>：点击「确认导入」将产品添加到录入列表</li>
+<li><strong>生成 Listing</strong>：回到主界面点击「批量生成 Listing」</li>
+</ol>
+
+<h3>三、模板字段说明</h3>
+<table style="width:100%;border-collapse:collapse;font-size:.85rem;margin:.5rem 0">
+<tr style="background:var(--bg)"><th style="padding:.4rem .6rem;border:1px solid var(--border);text-align:left">字段名</th><th style="padding:.4rem .6rem;border:1px solid var(--border);text-align:left">是否必填</th><th style="padding:.4rem .6rem;border:1px solid var(--border);text-align:left">说明</th></tr>
+<tr><td style="padding:.4rem .6rem;border:1px solid var(--border)">商品类目</td><td style="padding:.4rem .6rem;border:1px solid var(--border);color:var(--danger)">必填</td><td style="padding:.4rem .6rem;border:1px solid var(--border)">产品所属分类，如 <code>Home & Kitchen > Storage</code></td></tr>
+<tr><td style="padding:.4rem .6rem;border:1px solid var(--border)">目标平台</td><td style="padding:.4rem .6rem;border:1px solid var(--border);color:var(--danger)">必填</td><td style="padding:.4rem .6rem;border:1px solid var(--border)">可选值：<code>amazon</code> / <code>shopee</code> / <code>temu</code></td></tr>
+<tr><td style="padding:.4rem .6rem;border:1px solid var(--border)">目标语言</td><td style="padding:.4rem .6rem;border:1px solid var(--border);color:var(--danger)">必填</td><td style="padding:.4rem .6rem;border:1px solid var(--border)">可选值：<code>en</code> <code>zh</code> <code>ja</code> <code>ko</code> <code>es</code> <code>fr</code> <code>de</code> <code>pt</code> <code>th</code> <code>vi</code> <code>id</code> <code>ms</code></td></tr>
+<tr><td style="padding:.4rem .6rem;border:1px solid var(--border)">补充信息</td><td style="padding:.4rem .6rem;border:1px solid var(--border)">选填</td><td style="padding:.4rem .6rem;border:1px solid var(--border)">JSON 格式或自然语言描述，如品牌、材质、价格等</td></tr>
+</table>
+
+<h3>四、模板示例</h3>
+<pre>商品类目,目标平台,目标语言,补充信息
+Home & Kitchen > Storage,amazon,en,"{""brand"": ""MyBrand"", ""material"": ""plastic""}"
+Electronics > Accessories,shopee,zh,品牌是XX，材质为硅胶
+Sports & Outdoors,temu,ja,""</pre>
+
+<h3>五、图片上传说明</h3>
+<p>导入产品信息后，需要为每个产品上传商品图片。图片要求：</p>
+<ul>
+<li>格式：JPG / PNG / WEBP</li>
+<li>每个产品至少 1 张，建议 3-5 张以获得最佳效果</li>
+<li>图片应清晰展示产品外观、细节和使用场景</li>
+</ul>
+
+<h3>六、常见问题</h3>
+<div class="note">
+<strong>Q: CSV 文件打开后中文乱码？</strong><br>
+A: 请使用 UTF-8 编码保存 CSV 文件。模板文件已包含 BOM 标记，用 Excel 打开可正常显示中文。
+</div>
+<div class="note">
+<strong>Q: 补充信息的 JSON 格式怎么写？</strong><br>
+A: 使用花括号包裹，键名和文本值用双引号，键值对用冒号分隔，多对之间用逗号分隔。如果不确定格式，可以直接用自然语言描述。
+</div>
+<div class="note">
+<strong>Q: 导入后发现数据有误怎么办？</strong><br>
+A: 导入的产品会添加到左侧产品标签页中，您可以逐个切换修改，也可以删除后重新导入。
+</div>
+</div>
+</div>
+</div>
+</div>
+
 <footer class="footer">
 CrossLister &copy; 2026 &mdash; <a href="/docs">API 文档</a>
 </footer>
@@ -174,6 +346,10 @@ let products = [createEmptyProduct()];
 let activeProductIdx = 0;
 let allResults = [];
 
+// Batch import state
+let importParsedProducts = [];
+let importProductImages = {}; // { importIndex: [File, ...] }
+
 function createEmptyProduct() {
   return {
     images: [],
@@ -181,7 +357,7 @@ function createEmptyProduct() {
     platform: 'amazon',
     targetLang: 'en',
     extraInfo: '',
-    extraMode: 'natural' // 'json' or 'natural'
+    extraMode: 'natural'
   };
 }
 
@@ -280,14 +456,13 @@ function renderProductForm() {
         </div>
         ${p.extraMode === 'json' ? renderJsonGuide() : ''}
         <textarea class="form-textarea" id="extraInput${idx}"
-          placeholder="${p.extraMode === 'json' ? '{"brand": "...", "material": "..."}' : '例如：品牌是XX，材质为硅胶，售价约20美元，适合3-6岁儿童使用'}'
+          placeholder="${p.extraMode === 'json' ? '{"brand": "...", "material": "..."}' : '例如：品牌是XX，材质为硅胶，售价约20美元，适合3-6岁儿童使用'}"
           oninput="products[${idx}].extraInfo=this.value"
         >${escapeHtml(p.extraInfo)}</textarea>
       </div>
     </div>
   `;
 
-  // Setup upload handlers
   setupUploadHandlers(idx);
   renderThumbnails(idx);
 }
@@ -422,7 +597,6 @@ function fileToBase64(file) {
 async function handleGenerate() {
   saveCurrentForm();
 
-  // Validate all products
   for (let i = 0; i < products.length; i++) {
     if (products[i].images.length === 0) {
       alert(`产品 ${i + 1} 至少需要上传一张图片`);
@@ -451,7 +625,6 @@ async function handleGenerate() {
   }, 2000);
 
   try {
-    // Build batch request
     const batchProducts = [];
     for (let i = 0; i < products.length; i++) {
       const p = products[i];
@@ -482,6 +655,7 @@ async function handleGenerate() {
 
     const data = await resp.json();
     allResults = data.results;
+    activeResultTab = 0;
     renderBatchResults(allResults);
   } catch (err) {
     clearInterval(pt);
@@ -504,7 +678,6 @@ function renderBatchResults(results) {
     return;
   }
 
-  // Result tabs
   let tabsHtml = '<div class="result-tabs">';
   results.forEach((r, i) => {
     const label = r.error ? `产品 ${i + 1} (失败)` : `产品 ${i + 1}`;
@@ -512,7 +685,6 @@ function renderBatchResults(results) {
   });
   tabsHtml += '</div>';
 
-  // Result content
   let contentHtml = '';
   const active = results[activeResultTab];
   if (!active) {
@@ -537,7 +709,6 @@ function renderSingleResult(data) {
   const meta = data.metadata || {};
   let h = '';
 
-  // Title
   if (data.title) {
     h += '<div class="result-section"><h3><span class="dot"></span>商品标题</h3>';
     h += '<div class="result-title">' + escapeHtml(data.title) + '</div>';
@@ -548,7 +719,6 @@ function renderSingleResult(data) {
     h += '</div>';
   }
 
-  // Bullet points
   const bullets = data.bullet_points || [];
   if (bullets.length > 0) {
     const bulletsZh = data.bullet_points_zh || [];
@@ -563,7 +733,6 @@ function renderSingleResult(data) {
     h += '</ul></div>';
   }
 
-  // Description
   if (data.description) {
     h += '<div class="result-section"><h3><span class="dot"></span>商品描述</h3>';
     h += '<div class="description-text">' + escapeHtml(data.description) + '</div>';
@@ -574,7 +743,6 @@ function renderSingleResult(data) {
     h += '</div>';
   }
 
-  // Backend keywords
   const kw = data.backend_keywords || [];
   if (kw.length > 0) {
     h += '<div class="result-section"><h3><span class="dot"></span>后台关键词</h3><div class="tags">';
@@ -582,7 +750,6 @@ function renderSingleResult(data) {
     h += '</div></div>';
   }
 
-  // Compliance
   if (compliance && (compliance.passed !== undefined || compliance.violations || compliance.warnings || compliance.suggestions)) {
     const passed = compliance.passed;
     h += '<div class="result-section"><h3><span class="dot"></span>合规审核</h3>';
@@ -594,7 +761,6 @@ function renderSingleResult(data) {
     h += '</div></div>';
   }
 
-  // Visual analysis
   const vk = [
     {key:'detected_category',label:'商品类目'},
     {key:'colors',label:'颜色'},
@@ -614,7 +780,6 @@ function renderSingleResult(data) {
     h += '</div></div>';
   }
 
-  // Metadata
   if (meta.model_used || meta.latency_ms || meta.rag_chunks_used !== undefined) {
     h += '<div class="result-section"><div class="metadata-bar">';
     if (meta.model_used) h += '<div class="meta-item">模型：<span>' + escapeHtml(meta.model_used) + '</span></div>';
@@ -626,9 +791,258 @@ function renderSingleResult(data) {
   return h || '<div class="empty-state"><p>未返回有效数据</p></div>';
 }
 
+// ====================================================================
+// ====== Batch Import Modal ======
+// ====================================================================
+
+function openImportModal() {
+  document.getElementById('importModal').classList.add('show');
+  resetImportModal();
+}
+
+function closeImportModal() {
+  document.getElementById('importModal').classList.remove('show');
+}
+
+function resetImportModal() {
+  document.getElementById('importStep1').style.display = '';
+  document.getElementById('importStep2').style.display = 'none';
+  document.getElementById('importBackBtn').style.display = 'none';
+  document.getElementById('importConfirmBtn').style.display = 'none';
+  document.getElementById('importFileInput').value = '';
+  importParsedProducts = [];
+  importProductImages = {};
+}
+
+function importGoBack() {
+  resetImportModal();
+}
+
+// Setup import file upload
+(function() {
+  const area = document.getElementById('importUploadArea');
+  const input = document.getElementById('importFileInput');
+
+  ['dragenter','dragover'].forEach(e => {
+    area.addEventListener(e, ev => { ev.preventDefault(); area.classList.add('dragover'); });
+  });
+  ['dragleave','drop'].forEach(e => {
+    area.addEventListener(e, ev => { ev.preventDefault(); area.classList.remove('dragover'); });
+  });
+  area.addEventListener('drop', e => {
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) handleImportFile(files[0]);
+  });
+  input.addEventListener('change', () => {
+    if (input.files.length > 0) handleImportFile(input.files[0]);
+    input.value = '';
+  });
+})();
+
+async function handleImportFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+    alert('不支持的文件格式，请上传 CSV 或 Excel (.xlsx) 文件');
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  try {
+    const resp = await fetch('/api/v1/import/parse', { method: 'POST', body: fd });
+    if (!resp.ok) {
+      const t = await resp.text();
+      throw new Error(t || ('HTTP ' + resp.status));
+    }
+    const data = await resp.json();
+    importParsedProducts = data.products;
+    importProductImages = {};
+    renderImportPreview(data);
+  } catch (err) {
+    alert('文件解析失败: ' + err.message);
+  }
+}
+
+function renderImportPreview(data) {
+  document.getElementById('importStep1').style.display = 'none';
+  document.getElementById('importStep2').style.display = '';
+  document.getElementById('importBackBtn').style.display = '';
+  document.getElementById('importConfirmBtn').style.display = '';
+
+  // Summary
+  const summary = document.getElementById('importSummary');
+  summary.innerHTML = `
+    <div class="summary-item">总行数: <span class="num">${data.total_rows}</span></div>
+    <div class="summary-item success">校验通过: <span class="num">${data.valid_count}</span></div>
+    <div class="summary-item error">校验失败: <span class="num">${data.error_count}</span></div>
+  `;
+
+  // File-level errors
+  const errorsEl = document.getElementById('importErrors');
+  if (data.file_errors && data.file_errors.length > 0) {
+    errorsEl.innerHTML = '<div class="error-msg" style="margin-bottom:.8rem">' + data.file_errors.map(e => escapeHtml(e)).join('<br>') + '</div>';
+  } else {
+    errorsEl.innerHTML = '';
+  }
+
+  // Preview table
+  const table = document.getElementById('previewTable');
+  let html = `<thead><tr>
+    <th>行号</th>
+    <th>商品类目</th>
+    <th>目标平台</th>
+    <th>目标语言</th>
+    <th>补充信息</th>
+    <th>商品图片</th>
+    <th>状态</th>
+  </tr></thead><tbody>`;
+
+  data.products.forEach((p, i) => {
+    const rowClass = p.is_valid ? 'row-valid' : 'row-error';
+    html += `<tr class="${rowClass}">
+      <td>${p.row_number}</td>
+      <td>${escapeHtml(p.category)}</td>
+      <td>${escapeHtml(p.platform)}</td>
+      <td>${escapeHtml(p.target_lang)}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeAttr(p.extra_info)}">${escapeHtml(p.extra_info || '-')}</td>
+      <td class="img-upload-cell">
+        <label class="img-upload-btn" for="importImg${i}">
+          &#128247; <span id="importImgLabel${i}">上传图片</span>
+        </label>
+        <input type="file" id="importImg${i}" accept="image/*" multiple style="display:none" onchange="handleImportImages(${i}, this)">
+        <div class="img-thumbs" id="importImgThumbs${i}"></div>
+      </td>
+      <td>
+        ${p.is_valid
+          ? '<span class="status-badge ok">通过</span>'
+          : '<span class="status-badge err">失败</span>' + (p.errors.length > 0 ? '<div class="error-text">' + p.errors.map(e => escapeHtml(e)).join('<br>') + '</div>' : '')
+        }
+      </td>
+    </tr>`;
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+function handleImportImages(importIdx, input) {
+  const files = Array.from(input.files);
+  if (!importProductImages[importIdx]) {
+    importProductImages[importIdx] = [];
+  }
+  const remaining = 10 - importProductImages[importIdx].length;
+  if (remaining <= 0) return;
+  files.slice(0, remaining).forEach(f => importProductImages[importIdx].push(f));
+  input.value = '';
+  renderImportImgThumbs(importIdx);
+}
+
+function removeImportImage(importIdx, fileIdx) {
+  importProductImages[importIdx].splice(fileIdx, 1);
+  renderImportImgThumbs(importIdx);
+}
+
+function renderImportImgThumbs(importIdx) {
+  const container = document.getElementById(`importImgThumbs${importIdx}`);
+  const label = document.getElementById(`importImgLabel${importIdx}`);
+  if (!container) return;
+
+  const imgs = importProductImages[importIdx] || [];
+  if (label) label.textContent = imgs.length > 0 ? `${imgs.length} 张` : '上传图片';
+
+  container.innerHTML = '';
+  imgs.forEach((file, i) => {
+    const d = document.createElement('div');
+    d.className = 'mini-thumb';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(file);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    const btn = document.createElement('button');
+    btn.className = 'mini-remove';
+    btn.textContent = '\u2715';
+    btn.onclick = ev => { ev.stopPropagation(); removeImportImage(importIdx, i); };
+    d.appendChild(img);
+    d.appendChild(btn);
+    container.appendChild(d);
+  });
+}
+
+function confirmImport() {
+  saveCurrentForm();
+
+  let importedCount = 0;
+  let skippedCount = 0;
+  let missingImgCount = 0;
+
+  importParsedProducts.forEach((p, i) => {
+    if (!p.is_valid) {
+      skippedCount++;
+      return;
+    }
+    const imgs = importProductImages[i] || [];
+    if (imgs.length === 0) {
+      missingImgCount++;
+      skippedCount++;
+      return;
+    }
+    products.push({
+      images: [...imgs],
+      category: p.category,
+      platform: p.platform,
+      targetLang: p.target_lang,
+      extraInfo: p.extra_info || '',
+      extraMode: isJson(p.extra_info) ? 'json' : 'natural'
+    });
+    importedCount++;
+  });
+
+  closeImportModal();
+
+  if (importedCount > 0) {
+    activeProductIdx = products.length - importedCount;
+    renderProductTabs();
+    renderProductForm();
+  }
+
+  // Show result feedback
+  let msg = '';
+  if (importedCount > 0) msg += `成功导入 ${importedCount} 个产品`;
+  if (skippedCount > 0) msg += `${msg ? '，' : ''}跳过 ${skippedCount} 个`;
+  if (missingImgCount > 0) msg += `（其中 ${missingImgCount} 个未上传图片）`;
+  if (!msg) msg = '没有可导入的产品';
+
+  if (importedCount > 0) {
+    alert(msg + '。请切换到各产品标签页检查并补充图片后，点击「批量生成 Listing」。');
+  } else {
+    alert(msg + '。请检查数据校验结果和图片上传情况。');
+  }
+}
+
+function isJson(str) {
+  if (!str) return false;
+  try {
+    const obj = JSON.parse(str);
+    return typeof obj === 'object' && obj !== null;
+  } catch (e) {
+    return false;
+  }
+}
+
+// ====================================================================
+// ====== Guide Modal ======
+// ====================================================================
+
+function openGuideModal() {
+  document.getElementById('guideModal').classList.add('show');
+}
+
+function closeGuideModal() {
+  document.getElementById('guideModal').classList.remove('show');
+}
+
 // ====== Utilities ======
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-function escapeAttr(s) { return s.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escapeAttr(s) { return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 // ====== Init ======
 renderProductForm();

@@ -8,9 +8,16 @@ import json
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.agents.graph import generate_listing
+from app.api.batch_import import (
+    ParseResult,
+    generate_csv_template,
+    parse_csv,
+    parse_excel,
+)
 from app.config import get_settings
 from app.models.listing import ListingResponse, Platform
 from app.rag.indexer import build_index
@@ -79,6 +86,26 @@ class BatchProductResult(BaseModel):
 class BatchGenerateResponse(BaseModel):
     """Response for batch listing generation."""
     results: list[BatchProductResult]
+
+
+class ImportParsedProduct(BaseModel):
+    """A single parsed product from batch import."""
+    row_number: int
+    category: str
+    platform: str
+    target_lang: str
+    extra_info: str
+    errors: list[str] = []
+    is_valid: bool
+
+
+class ImportParseResponse(BaseModel):
+    """Response from parsing a batch import file."""
+    total_rows: int
+    valid_count: int
+    error_count: int
+    file_errors: list[str] = []
+    products: list[ImportParsedProduct]
 
 
 # --------------- Constants ---------------
@@ -303,6 +330,93 @@ async def batch_generate(
         *[_process_one(item) for item in request.products]
     )
     return BatchGenerateResponse(results=list(results))
+
+
+@router.get("/import/template", tags=["import"])
+async def download_import_template() -> Response:
+    """Download a CSV template for batch product import."""
+    template_content = generate_csv_template()
+    # Add BOM for Excel compatibility with Chinese characters
+    content = "\ufeff" + template_content
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=product_import_template.csv"},
+    )
+
+
+@router.post("/import/parse", response_model=ImportParseResponse, tags=["import"])
+async def parse_import_file(
+    file: UploadFile = File(description="CSV or Excel file for batch import"),
+) -> ImportParseResponse:
+    """Parse and validate a CSV/Excel file for batch product import.
+
+    Returns parsed product rows with validation errors for each row.
+    """
+    filename = file.filename or ""
+    content_type = file.content_type or ""
+
+    logger.info("api.import.parse.request", filename=filename, content_type=content_type)
+
+    # Determine file type and parse
+    if filename.endswith(".xlsx") or filename.endswith(".xls") or "spreadsheet" in content_type:
+        logger.info("api.import.parse.detected_excel", filename=filename)
+        content = await file.read()
+        logger.info("api.import.parse.file_read", filename=filename, size_bytes=len(content))
+        result = await run_in_threadpool(parse_excel, content)
+    elif filename.endswith(".csv") or "csv" in content_type or "text" in content_type:
+        logger.info("api.import.parse.detected_csv", filename=filename)
+        raw = await file.read()
+        logger.info("api.import.parse.file_read", filename=filename, size_bytes=len(raw))
+        # Try to decode as UTF-8, handle BOM
+        try:
+            text = raw.decode("utf-8-sig")
+            logger.debug("api.import.parse.decoded_utf8", filename=filename)
+        except UnicodeDecodeError:
+            try:
+                text = raw.decode("gbk")
+                logger.debug("api.import.parse.decoded_gbk", filename=filename)
+            except UnicodeDecodeError:
+                logger.error("api.import.parse.decode_failed", filename=filename)
+                raise HTTPException(
+                    status_code=400,
+                    detail="文件编码不支持，请使用 UTF-8 或 GBK 编码的 CSV 文件",
+                )
+        result = await run_in_threadpool(parse_csv, text)
+    else:
+        logger.error("api.import.parse.unsupported_format", filename=filename, content_type=content_type)
+        raise HTTPException(
+            status_code=400,
+            detail="不支持的文件格式，请上传 CSV 或 Excel (.xlsx) 文件",
+        )
+
+    logger.info(
+        "api.import.parse.done",
+        filename=filename,
+        total_rows=result.total_rows,
+        valid_count=result.valid_count,
+        error_count=result.error_count,
+        file_errors=result.errors,
+    )
+
+    return ImportParseResponse(
+        total_rows=result.total_rows,
+        valid_count=result.valid_count,
+        error_count=result.error_count,
+        file_errors=result.errors,
+        products=[
+            ImportParsedProduct(
+                row_number=p.row_number,
+                category=p.category,
+                platform=p.platform,
+                target_lang=p.target_lang,
+                extra_info=p.extra_info,
+                errors=p.errors,
+                is_valid=p.is_valid,
+            )
+            for p in result.products
+        ],
+    )
 
 
 @router.post("/rag/rebuild", tags=["rag"])

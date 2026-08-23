@@ -1,0 +1,8 @@
+商品类目,目标平台,目标语言,补充信息
+Home & Kitchen > Storage,amazon,en,"{""brand"": ""GoodBrand""}"
+,shopee,zh,类目为空的测试
+Electronics,ebay,en,平台不合法
+Sports > Outdoor,amazon,xx,语言不合法
+,invalid_platform,unknown_lang,三个字段全错
+Clothing > Shoes,temu,,语言为空
+Toys,shopee,ja,品牌是TestBrand
