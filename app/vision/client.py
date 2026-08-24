@@ -18,6 +18,7 @@ from typing import Any
 from app.config import Settings, VisionMode, get_settings
 from app.models.listing import VisualAnalysis
 from app.utils.logger import get_logger
+from app.utils.usage import add_usage
 from app.vision.prompts import build_vision_messages, parse_vision_json
 
 logger = get_logger(__name__)
@@ -143,6 +144,7 @@ class VisionClient:
 
         raw = response.choices[0].message.content or ""
         logger.info("vision.response", latency_ms=latency_ms)
+        add_usage(getattr(response, "usage", None))
 
         parsed = parse_vision_json(raw)
         if not parsed:

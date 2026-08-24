@@ -27,6 +27,7 @@ from app.config import LLMMode, Settings, get_settings
 from app.models.compliance import ComplianceResult
 from app.models.listing import ListingMetadata, ListingResponse, VisualAnalysis
 from app.utils.logger import get_logger
+from app.utils.usage import get_total_tokens, reset_usage
 
 logger = get_logger(__name__)
 
@@ -123,21 +124,26 @@ async def generate_listing(
         "extra_info": extra_info or {},
     }
 
+    # Fresh token accounting window for this task (isolated per async task).
+    reset_usage()
+
     started = time.perf_counter()
     result: AgentState = await graph.ainvoke(initial_state)
     latency_ms = int((time.perf_counter() - started) * 1000)
+    total_tokens = get_total_tokens()
 
     logger.info(
         "graph.completed",
         platform=platform,
         latency_ms=latency_ms,
         attempts=result.get("attempts", 0),
+        total_tokens=total_tokens,
     )
-    return _to_response(result, latency_ms, s)
+    return _to_response(result, latency_ms, s, total_tokens)
 
 
 def _to_response(
-    result: AgentState, latency_ms: int, settings: Settings
+    result: AgentState, latency_ms: int, settings: Settings, total_tokens: int = 0
 ) -> ListingResponse:
     """Convert the terminal graph state into the API response model."""
     final = result.get("final_listing") or result.get("listing") or {}
@@ -162,6 +168,7 @@ def _to_response(
             model_used=model_used,
             latency_ms=latency_ms,
             rag_chunks_used=len(rules),
+            total_tokens=total_tokens,
         ),
         title_zh=str(result.get("title_zh", "")),
         bullet_points_zh=[str(b) for b in result.get("bullet_points_zh", [])],

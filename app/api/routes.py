@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import re
+import time
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -126,6 +127,8 @@ class BatchProductResult(BaseModel):
     product_index: int
     listing: ListingResponse | None = None
     error: str | None = None
+    # Wall-clock time spent on this product (covers success and failure).
+    elapsed_ms: int = 0
 
 
 class BatchGenerateResponse(BaseModel):
@@ -337,6 +340,11 @@ async def batch_generate(
 
     async def _process_one(item: BatchProductItem) -> BatchProductResult:
         async with sem:
+            t0 = time.perf_counter()
+
+            def _elapsed() -> int:
+                return int((time.perf_counter() - t0) * 1000)
+
             try:
                 # Validate platform
                 try:
@@ -345,6 +353,7 @@ async def batch_generate(
                     return BatchProductResult(
                         product_index=item.product_index,
                         error=f"Unsupported platform: {item.platform}",
+                        elapsed_ms=_elapsed(),
                     )
 
                 # Decode images
@@ -352,11 +361,13 @@ async def batch_generate(
                     return BatchProductResult(
                         product_index=item.product_index,
                         error="At least one image is required.",
+                        elapsed_ms=_elapsed(),
                     )
                 if len(item.images_base64) > settings.vision_max_images:
                     return BatchProductResult(
                         product_index=item.product_index,
                         error=f"At most {settings.vision_max_images} images are allowed.",
+                        elapsed_ms=_elapsed(),
                     )
 
                 try:
@@ -365,12 +376,14 @@ async def batch_generate(
                     return BatchProductResult(
                         product_index=item.product_index,
                         error=sanitize_error(f"Failed to decode image: {exc}"),
+                        elapsed_ms=_elapsed(),
                     )
 
                 if any(not data for data in image_bytes):
                     return BatchProductResult(
                         product_index=item.product_index,
                         error="Empty image data detected.",
+                        elapsed_ms=_elapsed(),
                     )
 
                 parsed_extra = _parse_extra_info(item.extra_info)
@@ -386,6 +399,7 @@ async def batch_generate(
                 return BatchProductResult(
                     product_index=item.product_index,
                     listing=result,
+                    elapsed_ms=_elapsed(),
                 )
             except Exception as exc:
                 logger.error(
@@ -396,6 +410,7 @@ async def batch_generate(
                 return BatchProductResult(
                     product_index=item.product_index,
                     error=sanitize_error(str(exc)),
+                    elapsed_ms=_elapsed(),
                 )
 
     logger.info(

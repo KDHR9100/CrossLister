@@ -167,6 +167,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .visual-item .vi-label{font-size:.75rem;color:var(--text-secondary);margin-bottom:.3rem;font-weight:500}
 .visual-item .vi-value{font-size:.85rem;color:var(--text);line-height:1.4}
 .metadata-bar{display:flex;gap:1.5rem;padding:.8rem 1.2rem;background:var(--bg);border-radius:8px;border:1px solid var(--border);flex-wrap:wrap}
+.batch-summary{display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:1rem;padding:.8rem 1.2rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:.82rem;color:var(--text-secondary)}
+.batch-summary .summary-item span{font-weight:600;color:var(--text)}
+.batch-summary .summary-item span.ok{color:#00b894}
+.batch-summary .summary-item span.fail{color:#e17055}
 .meta-item{font-size:.78rem;color:var(--text-secondary)}
 .meta-item span{font-weight:600;color:var(--text)}
 .empty-state{text-align:center;padding:3rem 1.5rem;color:var(--text-secondary)}
@@ -743,7 +747,33 @@ function renderBatchResults(results) {
     contentHtml = renderSingleResult(active.listing);
   }
 
-  panel.innerHTML = tabsHtml + contentHtml;
+  panel.innerHTML = tabsHtml + contentHtml + renderBatchSummary(results);
+}
+
+// 汇总所有产品的 Token 消耗与耗时，展示在结果面板底部。
+function renderBatchSummary(results) {
+  let totalTokens = 0;
+  let totalElapsed = 0;
+  let okCount = 0;
+  let failCount = 0;
+  results.forEach(r => {
+    if (r.listing) {
+      okCount++;
+      totalTokens += (r.listing.metadata && r.listing.metadata.total_tokens) || 0;
+    } else {
+      failCount++;
+    }
+    totalElapsed += r.elapsed_ms || (r.listing && r.listing.metadata ? r.listing.metadata.latency_ms : 0) || 0;
+  });
+
+  let h = '<div class="batch-summary">';
+  h += '<div class="summary-item">产品：<span>' + results.length + ' 个</span></div>';
+  h += '<div class="summary-item">成功：<span class="ok">' + okCount + '</span></div>';
+  if (failCount > 0) h += '<div class="summary-item">失败：<span class="fail">' + failCount + '</span></div>';
+  if (totalTokens > 0) h += '<div class="summary-item">Token 总消耗：<span>' + totalTokens.toLocaleString() + '</span></div>';
+  if (totalElapsed > 0) h += '<div class="summary-item">累计耗时：<span>' + formatDuration(totalElapsed) + '</span></div>';
+  h += '</div>';
+  return h;
 }
 
 function switchResultTab(idx) {
@@ -828,15 +858,23 @@ function renderSingleResult(data) {
     h += '</div></div>';
   }
 
-  if (meta.model_used || meta.latency_ms || meta.rag_chunks_used !== undefined) {
+  if (meta.model_used || meta.latency_ms || meta.total_tokens || meta.rag_chunks_used !== undefined) {
     h += '<div class="result-section"><div class="metadata-bar">';
     if (meta.model_used) h += '<div class="meta-item">模型：<span>' + escapeHtml(meta.model_used) + '</span></div>';
-    if (meta.latency_ms) h += '<div class="meta-item">耗时：<span>' + escapeHtml(String(meta.latency_ms)) + 'ms</span></div>';
+    if (meta.latency_ms) h += '<div class="meta-item">实际耗时：<span>' + formatDuration(meta.latency_ms) + '</span></div>';
+    if (meta.total_tokens) h += '<div class="meta-item">Token 消耗：<span>' + Number(meta.total_tokens).toLocaleString() + '</span></div>';
     if (meta.rag_chunks_used !== undefined) h += '<div class="meta-item">RAG 检索：<span>' + escapeHtml(String(meta.rag_chunks_used)) + ' chunks</span></div>';
     h += '</div></div>';
   }
 
   return h || '<div class="empty-state"><p>未返回有效数据</p></div>';
+}
+
+// 将毫秒耗时格式化为易读文本（毫秒 / 秒）。
+function formatDuration(ms) {
+  const n = Number(ms) || 0;
+  if (n < 1000) return n + 'ms';
+  return (n / 1000).toFixed(1) + 's';
 }
 
 // ====================================================================

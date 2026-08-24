@@ -54,6 +54,8 @@ def test_generate_listing_end_to_end() -> None:
     assert body["compliance"]["passed"] is True
     assert body["compliance"]["attempts"] == 1
     assert body["metadata"]["rag_chunks_used"] > 0
+    # Token accounting is present (0 in mock mode, real counts in API mode).
+    assert body["metadata"]["total_tokens"] >= 0
     assert body["visual_analysis"]["detected_category"] == "storage organizer"
 
 
@@ -159,6 +161,9 @@ def test_batch_generate_multiple_products() -> None:
         assert r["error"] is None
         assert r["listing"]["title"]
         assert r["listing"]["compliance"]["passed"] is True
+        # Per-product wall-clock time and token accounting are present.
+        assert r["elapsed_ms"] >= 0
+        assert r["listing"]["metadata"]["total_tokens"] >= 0
 
 
 def test_batch_generate_requires_products() -> None:

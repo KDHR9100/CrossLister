@@ -14,6 +14,7 @@ import time
 
 from app.config import LLMMode, Settings, get_settings
 from app.utils.logger import get_logger
+from app.utils.usage import add_usage
 
 logger = get_logger(__name__)
 
@@ -121,6 +122,7 @@ class LLMClient:
                 )
                 latency_ms = int((time.perf_counter() - started) * 1000)
                 logger.info("llm.response", latency_ms=latency_ms)
+                add_usage(getattr(response, "usage", None))
                 return response.choices[0].message.content or ""
             except Exception as exc:  # noqa: BLE001 - classify below
                 # Only retry transient errors, and only while attempts remain.

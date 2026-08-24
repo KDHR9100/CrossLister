@@ -59,6 +59,7 @@ class ListingMetadata(BaseModel):
     model_used: str = ""
     latency_ms: int = 0
     rag_chunks_used: int = 0
+    total_tokens: int = 0
 
 
 class ListingResponse(BaseModel):
