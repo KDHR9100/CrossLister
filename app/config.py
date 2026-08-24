@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     # Cap on how many products are generated concurrently. Keeps pressure off
     # the remote LLM endpoint (avoids rate-limit / connection-reset storms).
     batch_max_concurrency: int = 8
+    # Per-product timeout (seconds). A single product that exceeds this is
+    # marked as failed so it cannot block the rest of the batch forever.
+    batch_product_timeout_s: float = 300.0
 
     # -- RAG -----------------------------------------------------------
     platform_rules_dir: Path = BASE_DIR / "data" / "platform_rules"

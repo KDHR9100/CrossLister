@@ -666,7 +666,7 @@ async function handleGenerate() {
   btn.querySelector('.btn-text').textContent = '生成中...';
 
   const rp = document.getElementById('resultsPanel');
-  rp.innerHTML = '<div class="empty-state"><div class="spinner" style="display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 1rem"></div><p>正在并发处理 ' + products.length + ' 个产品，请稍候...</p><p style="font-size:.78rem;color:var(--text-secondary);margin-top:.4rem">下方步骤为预计进度，实际耗时取决于图片数量与模型响应速度</p></div>';
+  rp.innerHTML = '<div class="empty-state"><div class="spinner" style="display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 1rem"></div><p>正在并发处理 ' + products.length + ' 个产品，请稍候...</p><p style="font-size:.78rem;color:var(--text-secondary);margin-top:.4rem">下方步骤为预计进度，实际耗时取决于图片数量与模型响应速度</p><p id="elapsedTimer" style="font-size:.85rem;color:var(--primary);margin-top:.6rem;font-weight:600">已等待 0 秒</p></div>';
 
   // Indeterminate progress hint: advance only up to step 4 while waiting,
   // so the UI never falsely shows "complete". Step 5 lights up on real response.
@@ -675,6 +675,23 @@ async function handleGenerate() {
     const n = a.length + 1;
     if (n < 5) setPipelineStep(n);
   }, 2000);
+
+  // Live elapsed-time counter so the user knows the request is still running.
+  const genStart = Date.now();
+  let timer = setInterval(() => {
+    const el = document.getElementById('elapsedTimer');
+    if (el) {
+      const secs = Math.floor((Date.now() - genStart) / 1000);
+      el.textContent = secs >= 60
+        ? '已等待 ' + Math.floor(secs / 60) + ' 分 ' + (secs % 60) + ' 秒'
+        : '已等待 ' + secs + ' 秒';
+    }
+  }, 1000);
+
+  // Safety-net timeout for the whole batch request (15 minutes). Individual
+  // products already have a server-side timeout; this only guards the HTTP call.
+  const controller = new AbortController();
+  const fetchTimeout = setTimeout(() => controller.abort(), 15 * 60 * 1000);
 
   try {
     const batchProducts = [];
@@ -694,10 +711,13 @@ async function handleGenerate() {
     const resp = await fetch('/api/v1/listing/batch_generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ products: batchProducts })
+      body: JSON.stringify({ products: batchProducts }),
+      signal: controller.signal
     });
 
     clearInterval(pt);
+    clearInterval(timer);
+    clearTimeout(fetchTimeout);
     setPipelineStep(5);
 
     if (!resp.ok) {
@@ -711,7 +731,12 @@ async function handleGenerate() {
     renderBatchResults(allResults);
   } catch (err) {
     clearInterval(pt);
-    rp.innerHTML = '<div class="error-msg"><strong>生成失败：</strong>' + escapeHtml(err.message) + '</div>';
+    clearInterval(timer);
+    clearTimeout(fetchTimeout);
+    const msg = err.name === 'AbortError'
+      ? '请求超时（超过 15 分钟）。请减少产品数量或图片数量后重试。'
+      : err.message;
+    rp.innerHTML = '<div class="error-msg"><strong>生成失败：</strong>' + escapeHtml(msg) + '</div>';
   } finally {
     btn.classList.remove('loading');
     btn.disabled = false;

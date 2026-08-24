@@ -388,14 +388,24 @@ async def batch_generate(
 
                 parsed_extra = _parse_extra_info(item.extra_info)
 
-                result = await generate_listing(
-                    images=image_bytes,
-                    category=item.category,
-                    platform=plat.value,
-                    target_lang=item.target_lang,
-                    extra_info=parsed_extra,
-                    settings=settings,
-                )
+                try:
+                    result = await asyncio.wait_for(
+                        generate_listing(
+                            images=image_bytes,
+                            category=item.category,
+                            platform=plat.value,
+                            target_lang=item.target_lang,
+                            extra_info=parsed_extra,
+                            settings=settings,
+                        ),
+                        timeout=settings.batch_product_timeout_s,
+                    )
+                except asyncio.TimeoutError:
+                    return BatchProductResult(
+                        product_index=item.product_index,
+                        error=f"生成超时（超过 {int(settings.batch_product_timeout_s)} 秒），请重试或减少图片数量。",
+                        elapsed_ms=_elapsed(),
+                    )
                 return BatchProductResult(
                     product_index=item.product_index,
                     listing=result,
