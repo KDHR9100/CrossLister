@@ -9,12 +9,32 @@ outputs themselves, keeping the whole pipeline runnable offline.
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 from app.config import LLMMode, Settings, get_settings
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Return True for transient errors worth retrying.
+
+    Connection drops, timeouts, rate limits and 5xx server errors are
+    transient; 4xx client errors (bad auth, invalid request) are not.
+    """
+    try:
+        import openai
+    except ImportError:  # pragma: no cover - openai always present in prod
+        return False
+    if isinstance(
+        exc, (openai.APIConnectionError, openai.APITimeoutError, openai.RateLimitError)
+    ):
+        return True
+    if isinstance(exc, openai.APIStatusError):
+        return getattr(exc, "status_code", 0) >= 500
+    return False
 
 
 class LLMClient:
@@ -84,17 +104,39 @@ class LLMClient:
 
         s = self._settings
         client = self._get_client()
+        max_retries = max(0, s.llm_max_retries)
 
-        started = time.perf_counter()
-        logger.info("llm.request", model=s.llm_model)
-        response = await client.chat.completions.create(
-            model=s.llm_model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            temperature=temperature,
-        )
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        logger.info("llm.response", latency_ms=latency_ms)
-        return response.choices[0].message.content or ""
+        last_exc: Exception | None = None
+        for attempt in range(max_retries + 1):
+            started = time.perf_counter()
+            logger.info("llm.request", model=s.llm_model, attempt=attempt + 1)
+            try:
+                response = await client.chat.completions.create(
+                    model=s.llm_model,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    temperature=temperature,
+                )
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                logger.info("llm.response", latency_ms=latency_ms)
+                return response.choices[0].message.content or ""
+            except Exception as exc:  # noqa: BLE001 - classify below
+                # Only retry transient errors, and only while attempts remain.
+                if not _is_retryable(exc) or attempt >= max_retries:
+                    logger.error("llm.request_failed", error=str(exc))
+                    raise
+                last_exc = exc
+                backoff_s = min(2 ** attempt, 8)  # 1s, 2s, 4s, capped at 8s
+                logger.warning(
+                    "llm.retry",
+                    attempt=attempt + 1,
+                    backoff_s=backoff_s,
+                    error=str(exc),
+                )
+                await asyncio.sleep(backoff_s)
+
+        # Unreachable: the loop either returns or re-raises, but keeps the
+        # type-checker satisfied about a guaranteed return path.
+        raise last_exc  # pragma: no cover

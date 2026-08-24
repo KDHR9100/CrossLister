@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     llm_api_key: str = "EMPTY"
     llm_model: str = "Qwen/Qwen2.5-7B-Instruct"
     llm_timeout_s: float = 120.0
+    # Transient-error retries for LLM calls (connection drops, rate limits, 5xx).
+    llm_max_retries: int = 3
+
+    # -- Batch generation ------------------------------------------------
+    # Cap on how many products are generated concurrently. Keeps pressure off
+    # the remote LLM endpoint (avoids rate-limit / connection-reset storms).
+    batch_max_concurrency: int = 8
 
     # -- RAG -----------------------------------------------------------
     platform_rules_dir: Path = BASE_DIR / "data" / "platform_rules"

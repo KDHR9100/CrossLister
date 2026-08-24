@@ -330,67 +330,73 @@ async def batch_generate(
     if not request.products:
         raise HTTPException(status_code=400, detail="At least one product is required.")
 
+    # Bound concurrent generations so we don't flood the remote LLM endpoint
+    # (which otherwise triggers rate limits / connection resets).
+    max_concurrency = max(1, settings.batch_max_concurrency)
+    sem = asyncio.Semaphore(max_concurrency)
+
     async def _process_one(item: BatchProductItem) -> BatchProductResult:
-        try:
-            # Validate platform
+        async with sem:
             try:
-                plat = Platform(item.platform)
-            except ValueError:
-                return BatchProductResult(
-                    product_index=item.product_index,
-                    error=f"Unsupported platform: {item.platform}",
-                )
+                # Validate platform
+                try:
+                    plat = Platform(item.platform)
+                except ValueError:
+                    return BatchProductResult(
+                        product_index=item.product_index,
+                        error=f"Unsupported platform: {item.platform}",
+                    )
 
-            # Decode images
-            if not item.images_base64:
-                return BatchProductResult(
-                    product_index=item.product_index,
-                    error="At least one image is required.",
-                )
-            if len(item.images_base64) > settings.vision_max_images:
-                return BatchProductResult(
-                    product_index=item.product_index,
-                    error=f"At most {settings.vision_max_images} images are allowed.",
-                )
+                # Decode images
+                if not item.images_base64:
+                    return BatchProductResult(
+                        product_index=item.product_index,
+                        error="At least one image is required.",
+                    )
+                if len(item.images_base64) > settings.vision_max_images:
+                    return BatchProductResult(
+                        product_index=item.product_index,
+                        error=f"At most {settings.vision_max_images} images are allowed.",
+                    )
 
-            try:
-                image_bytes = [_decode_base64_image(img) for img in item.images_base64]
+                try:
+                    image_bytes = [_decode_base64_image(img) for img in item.images_base64]
+                except Exception as exc:
+                    return BatchProductResult(
+                        product_index=item.product_index,
+                        error=sanitize_error(f"Failed to decode image: {exc}"),
+                    )
+
+                if any(not data for data in image_bytes):
+                    return BatchProductResult(
+                        product_index=item.product_index,
+                        error="Empty image data detected.",
+                    )
+
+                parsed_extra = _parse_extra_info(item.extra_info)
+
+                result = await generate_listing(
+                    images=image_bytes,
+                    category=item.category,
+                    platform=plat.value,
+                    target_lang=item.target_lang,
+                    extra_info=parsed_extra,
+                    settings=settings,
+                )
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    listing=result,
+                )
             except Exception as exc:
+                logger.error(
+                    "api.batch_generate.product_failed",
+                    product_index=item.product_index,
+                    error=str(exc),
+                )
                 return BatchProductResult(
                     product_index=item.product_index,
-                    error=sanitize_error(f"Failed to decode image: {exc}"),
+                    error=sanitize_error(str(exc)),
                 )
-
-            if any(not data for data in image_bytes):
-                return BatchProductResult(
-                    product_index=item.product_index,
-                    error="Empty image data detected.",
-                )
-
-            parsed_extra = _parse_extra_info(item.extra_info)
-
-            result = await generate_listing(
-                images=image_bytes,
-                category=item.category,
-                platform=plat.value,
-                target_lang=item.target_lang,
-                extra_info=parsed_extra,
-                settings=settings,
-            )
-            return BatchProductResult(
-                product_index=item.product_index,
-                listing=result,
-            )
-        except Exception as exc:
-            logger.error(
-                "api.batch_generate.product_failed",
-                product_index=item.product_index,
-                error=str(exc),
-            )
-            return BatchProductResult(
-                product_index=item.product_index,
-                error=sanitize_error(str(exc)),
-            )
 
     logger.info(
         "api.batch_generate.request",
