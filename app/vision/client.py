@@ -119,13 +119,22 @@ class VisionClient:
     def _get_client(self):
         """Return a cached AsyncOpenAI client, building it on first use."""
         if self._client is None:
+            import openai._base_client as _bc
             from openai import AsyncOpenAI
 
+            # The SDK's own httpx module (may be the renamed httpx2 build);
+            # reusing it guarantees http_client type compatibility.
+            _httpx = getattr(_bc, "httpx", None) or getattr(_bc, "httpx2")
+
             s = self._settings
+            # trust_env=False: bypass any http_proxy/https_proxy inherited from
+            # the environment. Vision payloads are large; local proxies drop
+            # such connections mid-response. The endpoint is directly reachable.
             self._client = AsyncOpenAI(
                 base_url=s.vision_api_base,
                 api_key=s.vision_api_key or "EMPTY",
                 timeout=s.vision_timeout_s,
+                http_client=_httpx.AsyncClient(trust_env=False),
             )
         return self._client
 

@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 import time
+from datetime import datetime
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -27,6 +28,11 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1")
+
+# Captured when this module is imported (i.e. when the server starts or a
+# --reload worker spawns). Exposed via /api/v1/diag so operators can confirm
+# a running server actually loaded the latest code after a restart.
+_MODULE_STARTED_AT = datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 # --------------- Upload limits & sanitisation ---------------
@@ -242,6 +248,35 @@ async def list_platforms() -> PlatformsResponse:
 async def list_languages() -> SupportedLanguages:
     """Return supported target languages for listing translation."""
     return SupportedLanguages(languages=SUPPORTED_LANGUAGES)
+
+
+@router.get("/diag", tags=["meta"])
+async def diagnostics() -> dict:
+    """Expose the loaded config and module start time.
+
+    Lets operators confirm a running server actually picked up new code after
+    a restart: if ``module_started_at`` predates the last code change or
+    restart, the server is stale and must be restarted.
+    """
+    s = get_settings()
+    return {
+        "module_started_at": _MODULE_STARTED_AT,
+        "vision": {
+            "mode": s.vision_mode.value,
+            "model": s.vision_model,
+            "max_images": s.vision_max_images,
+            "max_image_side": s.vision_max_image_side,
+            "jpeg_quality": s.vision_jpeg_quality,
+        },
+        "batch": {
+            "max_concurrency": s.batch_max_concurrency,
+            "product_timeout_s": s.batch_product_timeout_s,
+        },
+        "limits": {
+            "max_image_bytes": MAX_IMAGE_BYTES,
+            "max_import_file_bytes": MAX_IMPORT_FILE_BYTES,
+        },
+    }
 
 
 @router.post("/listing/generate", response_model=ListingResponse, tags=["listing"])
