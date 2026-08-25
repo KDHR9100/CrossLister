@@ -136,6 +136,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .guide-content pre{background:var(--bg);padding:.8rem;border-radius:8px;overflow-x:auto;font-size:.8rem;margin:.5rem 0;border:1px solid var(--border)}
 .guide-content .note{background:rgba(108,92,231,.05);border:1px solid rgba(108,92,231,.15);border-radius:8px;padding:.8rem;margin:.8rem 0;font-size:.82rem;color:var(--text-secondary)}
 
+/* History modal */
+.history-table{width:100%;border-collapse:collapse;font-size:.82rem}
+.history-table th{background:var(--bg);padding:.5rem .6rem;text-align:left;font-weight:600;color:var(--text-secondary);border-bottom:2px solid var(--border);white-space:nowrap}
+.history-table td{padding:.5rem .6rem;border-bottom:1px solid var(--border);vertical-align:middle}
+.history-table tr:hover{background:rgba(108,92,231,.02)}
+.history-table .link-btn{border:none;background:none;color:var(--primary);font-size:.82rem;cursor:pointer;font-weight:600;font-family:inherit}
+.history-table .link-btn:hover{text-decoration:underline}
+.hist-product{border:1.5px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem;background:var(--bg)}
+.hist-product-head{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem;font-size:.85rem;font-weight:600}
+.hist-meta{font-weight:400;color:var(--text-secondary);font-size:.78rem}
+.hist-imgs{display:flex;gap:.4rem;flex-wrap:wrap;margin:.5rem 0 .8rem}
+.hist-img{width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--border);cursor:pointer;display:block}
+.hist-img img{width:100%;height:100%;object-fit:cover;transition:transform .15s}
+.hist-img:hover img{transform:scale(1.06)}
+.hist-product .result-section{box-shadow:none;border:1px solid var(--border);margin-bottom:.8rem}
+.status-badge{display:inline-block;padding:.15rem .5rem;border-radius:10px;font-size:.72rem;font-weight:600}
+.status-badge.ok{background:rgba(16,185,129,.1);color:var(--success)}
+.status-badge.err{background:rgba(239,68,68,.1);color:var(--danger)}
+
 /* Results */
 .results-panel{display:flex;flex-direction:column;gap:1.2rem}
 .result-tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem}
@@ -218,6 +237,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 <div class="action-row">
 <button class="btn-secondary" onclick="openImportModal()" title="通过 CSV/Excel 批量导入产品">&#128196; 批量导入</button>
 <button class="btn-secondary" onclick="openGuideModal()" title="查看操作指南">&#128214; 操作指南</button>
+<button class="btn-secondary" onclick="openHistoryModal()" title="查看历史生成记录">&#128218; 历史记录</button>
 </div>
 
 <!-- Product Form Container -->
@@ -337,6 +357,27 @@ A: 使用花括号包裹，键名和文本值用双引号，键值对用冒号�
 A: 导入的产品会添加到左侧产品标签页中，您可以逐个切换修改，也可以删除后重新导入。
 </div>
 </div>
+</div>
+</div>
+</div>
+
+<!-- History Modal -->
+<div class="modal-overlay" id="historyModal">
+<div class="modal" style="max-width:1000px">
+<div class="modal-header">
+<h2>&#128218; 生成历史记录</h2>
+<button class="modal-close" onclick="closeHistoryModal()">&times;</button>
+</div>
+<div class="modal-body" id="historyModalBody">
+<!-- List view -->
+<div id="historyListView">
+<div class="empty-state" style="padding:2rem"><p>加载中...</p></div>
+</div>
+<!-- Detail view -->
+<div id="historyDetailView" style="display:none"></div>
+</div>
+<div class="modal-footer">
+<button class="btn-secondary" id="historyBackBtn" style="display:none;flex:none;width:auto" onclick="historyGoBack()">&#8592; 返回列表</button>
 </div>
 </div>
 </div>
@@ -1131,6 +1172,134 @@ function openGuideModal() {
 
 function closeGuideModal() {
   document.getElementById('guideModal').classList.remove('show');
+}
+
+// ====================================================================
+// ====== History Modal ======
+// ====================================================================
+// Read-only viewer over the cold-storage history API. The main generation
+// flow never depends on this code; it only fetches completed records.
+
+function openHistoryModal() {
+  document.getElementById('historyModal').classList.add('show');
+  historyShowList();
+  loadHistoryList();
+}
+
+function closeHistoryModal() {
+  document.getElementById('historyModal').classList.remove('show');
+}
+
+function historyShowList() {
+  document.getElementById('historyListView').style.display = '';
+  document.getElementById('historyDetailView').style.display = 'none';
+  document.getElementById('historyBackBtn').style.display = 'none';
+}
+
+function historyGoBack() {
+  historyShowList();
+}
+
+function formatHistTime(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+async function loadHistoryList() {
+  const view = document.getElementById('historyListView');
+  view.innerHTML = '<div class="empty-state" style="padding:2rem"><p>加载中...</p></div>';
+  try {
+    const resp = await fetch('/api/v1/history?limit=100');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!data.enabled) {
+      view.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128218;</div><p>历史记录功能未启用（HISTORY_ENABLED=false）</p></div>';
+      return;
+    }
+    const records = data.records || [];
+    if (records.length === 0) {
+      view.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128218;</div><p>暂无生成历史记录</p><p style="margin-top:.3rem;font-size:.82rem;opacity:.7">生成 Listing 完成后，记录会自动保存在这里</p></div>';
+      return;
+    }
+    let html = '<table class="history-table"><thead><tr><th>生成时间</th><th>方式</th><th>产品数</th><th>成功</th><th>平台</th><th>标题预览</th><th></th></tr></thead><tbody>';
+    records.forEach(r => {
+      html += `<tr>
+        <td style="white-space:nowrap">${escapeHtml(formatHistTime(r.created_at))}</td>
+        <td>${escapeHtml(r.api === 'listing/batch_generate' ? '批量生成' : '单产品生成')}</td>
+        <td>${r.product_count}</td>
+        <td>${r.success_count}/${r.product_count}</td>
+        <td>${escapeHtml((r.platforms || []).join(', '))}</td>
+        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeAttr(r.title_preview || '')}">${escapeHtml(r.title_preview || '-')}</td>
+        <td><button class="link-btn" onclick="viewHistoryRecord('${escapeAttr(r.record_id)}')">查看</button></td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    view.innerHTML = html;
+  } catch (err) {
+    view.innerHTML = '<div class="error-msg"><strong>历史记录加载失败：</strong>' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function viewHistoryRecord(recordId) {
+  const list = document.getElementById('historyListView');
+  const detail = document.getElementById('historyDetailView');
+  list.style.display = 'none';
+  detail.style.display = '';
+  document.getElementById('historyBackBtn').style.display = '';
+  detail.innerHTML = '<div class="empty-state" style="padding:2rem"><p>加载中...</p></div>';
+  try {
+    const resp = await fetch('/api/v1/history/' + encodeURIComponent(recordId));
+    if (!resp.ok) {
+      throw new Error(resp.status === 404 ? '记录不存在或已被清理' : 'HTTP ' + resp.status);
+    }
+    const rec = await resp.json();
+    renderHistoryDetail(rec);
+  } catch (err) {
+    detail.innerHTML = '<div class="error-msg"><strong>记录加载失败：</strong>' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderHistoryDetail(rec) {
+  const detail = document.getElementById('historyDetailView');
+  let h = '<div class="metadata-bar" style="margin-bottom:1rem">';
+  h += '<div class="meta-item">记录 ID：<span>' + escapeHtml(rec.record_id) + '</span></div>';
+  h += '<div class="meta-item">生成时间：<span>' + escapeHtml(formatHistTime(rec.created_at)) + '</span></div>';
+  h += '<div class="meta-item">方式：<span>' + escapeHtml(rec.api === 'listing/batch_generate' ? '批量生成' : '单产品生成') + '</span></div>';
+  h += '</div>';
+
+  (rec.products || []).forEach(p => {
+    const ok = p.status === 'success';
+    h += '<div class="hist-product">';
+    h += '<div class="hist-product-head">';
+    h += '产品 ' + (Number(p.product_index || 0) + 1);
+    h += '<span class="hist-meta">' + escapeHtml(p.platform || '') + ' · ' + escapeHtml(p.target_lang || '') + '</span>';
+    if (p.category) h += '<span class="hist-meta">' + escapeHtml(p.category) + '</span>';
+    h += ok ? '<span class="status-badge ok">成功</span>' : '<span class="status-badge err">失败</span>';
+    if (p.elapsed_ms) h += '<span class="hist-meta">耗时 ' + formatDuration(p.elapsed_ms) + '</span>';
+    h += '</div>';
+
+    const imgs = p.images || [];
+    if (imgs.length > 0) {
+      h += '<div class="hist-imgs">';
+      imgs.forEach(name => {
+        const url = '/api/v1/history/' + encodeURIComponent(rec.record_id) + '/images/' + encodeURIComponent(name);
+        h += '<a class="hist-img" href="' + url + '" target="_blank" rel="noopener" title="' + escapeAttr(name) + '"><img loading="lazy" src="' + url + '" alt="' + escapeAttr(name) + '"></a>';
+      });
+      h += '</div>';
+    }
+
+    if (ok && p.listing) {
+      h += renderSingleResult(p.listing);
+    } else if (p.error) {
+      h += '<div class="error-msg">' + escapeHtml(p.error) + '</div>';
+    }
+    h += '</div>';
+  });
+
+  detail.innerHTML = h;
 }
 
 // ====== Utilities ======

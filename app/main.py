@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app import __version__
+from app.api.history import router as history_router
 from app.api.routes import router as api_router
 from app.config import get_settings, BASE_DIR
 from app.utils.logger import get_logger, setup_logging
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router)
+    app.include_router(history_router)
 
     @app.get("/api/v1/health", tags=["system"])
     async def health() -> dict:

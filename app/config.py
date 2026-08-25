@@ -108,6 +108,18 @@ class Settings(BaseSettings):
     # -- Compliance guardrails ------------------------------------------
     max_compliance_retries: int = 3
 
+    # -- Generation history (cold storage) -------------------------------
+    # Records are written to disk *after* generation completes, in a
+    # fire-and-forget task; the history store never participates in the
+    # live generation pipeline.
+    history_enabled: bool = True
+    history_dir: Path = BASE_DIR / "data" / "history"
+    # Save (compressed) product images alongside the text. Disable to store
+    # text-only records and minimize disk usage.
+    history_save_images: bool = True
+    # Oldest records are pruned once the count exceeds this cap.
+    history_max_records: int = 200
+
 
 @lru_cache
 def get_settings() -> Settings:

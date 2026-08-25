@@ -21,6 +21,7 @@ from app.api.batch_import import (
     parse_excel,
 )
 from app.config import get_settings
+from app.history import store as history_store
 from app.models.listing import ListingResponse, Platform
 from app.rag.indexer import build_index
 from app.utils.logger import get_logger
@@ -236,6 +237,41 @@ async def _read_and_validate(f: UploadFile) -> bytes:
     return data
 
 
+def _record_history(
+    api: str,
+    products_payload: list[dict],
+    collected_images: dict[int, list[bytes]],
+) -> None:
+    """Persist a generation record to cold storage, fire-and-forget.
+
+    Called only after generation completes (success or failure). The write runs
+    in a background task off the event loop, and every error is swallowed and
+    logged — history can never block, delay, or break the request.
+    """
+    settings = get_settings()
+    if not settings.history_enabled:
+        return
+    task = asyncio.create_task(
+        history_store.save_record_async(
+            settings.history_dir,
+            api,
+            products_payload,
+            collected_images,
+            save_images=settings.history_save_images,
+            max_records=settings.history_max_records,
+            max_image_side=settings.vision_max_image_side,
+            jpeg_quality=settings.vision_jpeg_quality,
+        )
+    )
+
+    def _log_failure(t: asyncio.Task) -> None:
+        exc = t.exception()
+        if exc is not None:
+            logger.error("history.task_failed", error=str(exc))
+
+    task.add_done_callback(_log_failure)
+
+
 # --------------- Routes ---------------
 
 @router.get("/platforms", response_model=PlatformsResponse, tags=["meta"])
@@ -319,8 +355,9 @@ async def generate(
         num_images=len(images),
     )
 
+    t0 = time.perf_counter()
     try:
-        return await generate_listing(
+        result = await generate_listing(
             images=image_bytes,
             category=category,
             platform=platform.value,
@@ -329,12 +366,51 @@ async def generate(
             settings=settings,
         )
     except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
         logger.error("api.generate.failed", error=str(exc))
+        # History: record the failed generation too (fire-and-forget, after
+        # the pipeline finished — it never touches the response path).
+        _record_history(
+            "listing/generate",
+            [
+                {
+                    "product_index": 0,
+                    "category": category,
+                    "platform": platform.value,
+                    "target_lang": target_lang,
+                    "status": "failed",
+                    "listing": None,
+                    "error": sanitize_error(str(exc)),
+                    "elapsed_ms": elapsed_ms,
+                }
+            ],
+            {0: image_bytes},
+        )
         # Keep the message useful for ops screenshots but strip credentials.
         raise HTTPException(
             status_code=500,
             detail=sanitize_error(f"Listing generation failed: {exc}"),
         ) from exc
+
+    # History: persisted only after generation succeeded; response is already
+    # built, so the background write cannot affect it.
+    _record_history(
+        "listing/generate",
+        [
+            {
+                "product_index": 0,
+                "category": category,
+                "platform": platform.value,
+                "target_lang": target_lang,
+                "status": "success",
+                "listing": result.model_dump(),
+                "error": None,
+                "elapsed_ms": int((time.perf_counter() - t0) * 1000),
+            }
+        ],
+        {0: image_bytes},
+    )
+    return result
 
 
 @router.post(
@@ -399,6 +475,10 @@ async def batch_generate(
     max_concurrency = max(1, settings.batch_max_concurrency)
     sem = asyncio.Semaphore(max_concurrency)
 
+    # Raw image bytes per product index, kept only for the post-generation
+    # history write (cold storage). Populated while validating uploads.
+    collected_images: dict[int, list[bytes]] = {}
+
     async def _process_one(
         item: BatchProductMeta, files: list[UploadFile]
     ) -> BatchProductResult:
@@ -441,6 +521,7 @@ async def batch_generate(
                         error=sanitize_error(str(exc)),
                         elapsed_ms=_elapsed(),
                     )
+                collected_images[item.product_index] = image_bytes
 
                 parsed_extra = _parse_extra_info(item.extra_info)
 
@@ -487,6 +568,27 @@ async def batch_generate(
 
     results = await asyncio.gather(
         *[_process_one(m, files) for m, files in zip(metas, grouped)]
+    )
+
+    # History (cold storage): written only after every product has finished.
+    # Fire-and-forget — the response below is already built and returns
+    # immediately; the background write cannot block or alter it.
+    _record_history(
+        "listing/batch_generate",
+        [
+            {
+                "product_index": m.product_index,
+                "category": m.category,
+                "platform": m.platform,
+                "target_lang": m.target_lang,
+                "status": "success" if r.listing else "failed",
+                "listing": r.listing.model_dump() if r.listing else None,
+                "error": r.error,
+                "elapsed_ms": r.elapsed_ms,
+            }
+            for m, r in zip(metas, results)
+        ],
+        collected_images,
     )
     return BatchGenerateResponse(results=list(results))
 
