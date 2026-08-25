@@ -6,6 +6,8 @@ Chroma index built from the bundled rule documents.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -129,31 +131,35 @@ def test_rag_rebuild() -> None:
     assert body["total_chunks"] == 30
 
 
-# --------------- Batch generation ---------------
+# --------------- Batch generation (multipart) ---------------
+
+def _png_part(name: str = "a.png"):
+    """One multipart file tuple carrying the minimal valid PNG."""
+    return ("images", (name, _PNG_1X1, "image/png"))
+
 
 def test_batch_generate_multiple_products() -> None:
-    import base64
-
-    img_b64 = base64.b64encode(_PNG_1X1).decode("utf-8")
-    payload = {
-        "products": [
-            {
-                "product_index": 0,
-                "images_base64": [img_b64],
-                "category": "storage organizer",
-                "platform": "amazon",
-                "target_lang": "en",
-            },
-            {
-                "product_index": 1,
-                "images_base64": [img_b64],
-                "category": "kitchen tools",
-                "platform": "shopee",
-                "target_lang": "en",
-            },
-        ]
-    }
-    resp = client.post("/api/v1/listing/batch_generate", json=payload)
+    meta = [
+        {
+            "product_index": 0,
+            "category": "storage organizer",
+            "platform": "amazon",
+            "target_lang": "en",
+            "image_count": 1,
+        },
+        {
+            "product_index": 1,
+            "category": "kitchen tools",
+            "platform": "shopee",
+            "target_lang": "en",
+            "image_count": 1,
+        },
+    ]
+    resp = client.post(
+        "/api/v1/listing/batch_generate",
+        data={"products": json.dumps(meta)},
+        files=[_png_part("p0.png"), _png_part("p1.png")],
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["results"]) == 2
@@ -167,26 +173,28 @@ def test_batch_generate_multiple_products() -> None:
 
 
 def test_batch_generate_requires_products() -> None:
-    resp = client.post("/api/v1/listing/batch_generate", json={"products": []})
+    resp = client.post(
+        "/api/v1/listing/batch_generate",
+        data={"products": json.dumps([])},
+    )
     assert resp.status_code == 400
 
 
 def test_batch_generate_reports_invalid_platform() -> None:
-    import base64
-
-    img_b64 = base64.b64encode(_PNG_1X1).decode("utf-8")
-    payload = {
-        "products": [
-            {
-                "product_index": 0,
-                "images_base64": [img_b64],
-                "category": "storage organizer",
-                "platform": "ebay",
-                "target_lang": "en",
-            }
-        ]
-    }
-    resp = client.post("/api/v1/listing/batch_generate", json=payload)
+    meta = [
+        {
+            "product_index": 0,
+            "category": "storage organizer",
+            "platform": "ebay",
+            "target_lang": "en",
+            "image_count": 1,
+        }
+    ]
+    resp = client.post(
+        "/api/v1/listing/batch_generate",
+        data={"products": json.dumps(meta)},
+        files=[_png_part()],
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["results"][0]["listing"] is None
@@ -194,45 +202,74 @@ def test_batch_generate_reports_invalid_platform() -> None:
 
 
 def test_batch_generate_reports_missing_images() -> None:
-    payload = {
-        "products": [
-            {
-                "product_index": 0,
-                "images_base64": [],
-                "category": "storage organizer",
-                "platform": "amazon",
-                "target_lang": "en",
-            }
-        ]
-    }
-    resp = client.post("/api/v1/listing/batch_generate", json=payload)
+    meta = [
+        {
+            "product_index": 0,
+            "category": "storage organizer",
+            "platform": "amazon",
+            "target_lang": "en",
+            "image_count": 0,
+        }
+    ]
+    resp = client.post(
+        "/api/v1/listing/batch_generate",
+        data={"products": json.dumps(meta)},
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["results"][0]["listing"] is None
     assert body["results"][0]["error"]
 
 
-def test_batch_generate_rejects_non_image_base64() -> None:
-    import base64
-
+def test_batch_generate_rejects_non_image_upload() -> None:
     # Plain text bytes are not a recognised image signature.
-    bad_b64 = base64.b64encode(b"this is definitely not an image").decode("utf-8")
-    payload = {
-        "products": [
-            {
-                "product_index": 0,
-                "images_base64": [bad_b64],
-                "category": "storage organizer",
-                "platform": "amazon",
-                "target_lang": "en",
-            }
-        ]
-    }
-    resp = client.post("/api/v1/listing/batch_generate", json=payload)
+    meta = [
+        {
+            "product_index": 0,
+            "category": "storage organizer",
+            "platform": "amazon",
+            "target_lang": "en",
+            "image_count": 1,
+        }
+    ]
+    resp = client.post(
+        "/api/v1/listing/batch_generate",
+        data={"products": json.dumps(meta)},
+        files=[("images", ("bad.txt", b"this is definitely not an image", "text/plain"))],
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["results"][0]["listing"] is None
     assert body["results"][0]["error"]
+
+
+def test_batch_generate_rejects_image_count_mismatch() -> None:
+    # Metadata declares two images but only one file part is uploaded.
+    meta = [
+        {
+            "product_index": 0,
+            "category": "storage organizer",
+            "platform": "amazon",
+            "target_lang": "en",
+            "image_count": 2,
+        }
+    ]
+    resp = client.post(
+        "/api/v1/listing/batch_generate",
+        data={"products": json.dumps(meta)},
+        files=[_png_part()],
+    )
+    assert resp.status_code == 400
+    assert "mismatch" in resp.json()["detail"].lower()
+
+
+def test_batch_generate_rejects_invalid_products_json() -> None:
+    resp = client.post(
+        "/api/v1/listing/batch_generate",
+        data={"products": "not-json"},
+        files=[_png_part()],
+    )
+    assert resp.status_code == 400
 
 
 def test_generate_rejects_non_image_upload() -> None:

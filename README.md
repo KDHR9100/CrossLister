@@ -146,30 +146,25 @@ curl -X POST http://localhost:8080/api/v1/listing/generate \
   -F "target_lang=en"
 ```
 
-**多产品并发生成：**
+**多产品并发生成（multipart 二进制上传）：**
+
+`products` 字段为产品元数据的 JSON 数组，每个产品用 `image_count` 声明
+自己的图片数量；所有图片按产品顺序以 `images` 文件域依次上传（产品 0 的
+图片在前，接着产品 1……），服务端按声明数量顺序切片归属。
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/listing/batch_generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "products": [
-      {
-        "product_index": 0,
-        "images_base64": ["data:image/png;base64,iVBOR..."],
-        "category": "storage organizer",
-        "platform": "amazon",
-        "target_lang": "en"
-      },
-      {
-        "product_index": 1,
-        "images_base64": ["data:image/png;base64,iVBOR..."],
-        "category": "electronics",
-        "platform": "shopee",
-        "target_lang": "zh"
-      }
-    ]
-  }'
+  -F 'products=[
+    {"product_index":0,"category":"storage organizer","platform":"amazon","target_lang":"en","image_count":1},
+    {"product_index":1,"category":"electronics","platform":"shopee","target_lang":"zh","image_count":1}
+  ]' \
+  -F "images=@./product0.png;type=image/png" \
+  -F "images=@./product1.png;type=image/png"
 ```
+
+> 图片以二进制直传（无 base64 膨胀）。上传前服务端会自动将图片缩放到
+> `VISION_MAX_IMAGE_SIDE`（默认 1280px）并压缩为 JPEG，避免超出远端网关
+> 的请求体限制。
 
 **批量导入模板下载：**
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import re
 import time
@@ -102,12 +101,13 @@ class SupportedLanguages(BaseModel):
     )
 
 
-class BatchProductItem(BaseModel):
-    """A single product in a batch generation request."""
+class BatchProductMeta(BaseModel):
+    """Metadata for one product in a multipart batch generation request.
+
+    Images travel as separate multipart file parts; ``image_count`` declares
+    how many of the (ordered) ``images`` parts belong to this product.
+    """
     product_index: int = Field(description="0-based product index")
-    images_base64: list[str] = Field(
-        description="List of base64-encoded image data (with or without data URI prefix)"
-    )
     category: str = Field(description="Product category")
     platform: str = Field(default="amazon", description="Target platform")
     target_lang: str = Field(default="en", description="Target language code")
@@ -115,11 +115,7 @@ class BatchProductItem(BaseModel):
         default=None,
         description="Optional extra info: JSON string or natural language text",
     )
-
-
-class BatchGenerateRequest(BaseModel):
-    """Request body for batch listing generation."""
-    products: list[BatchProductItem]
+    image_count: int = Field(ge=0, description="Number of images for this product")
 
 
 class BatchProductResult(BaseModel):
@@ -215,20 +211,23 @@ def _parse_extra_info(extra_info: str | None) -> dict | None:
         return {"natural_language_description": text}
 
 
-def _decode_base64_image(data: str) -> bytes:
-    """Decode a base64 image, stripping data URI prefix if present.
+async def _read_and_validate(f: UploadFile) -> bytes:
+    """Read one uploaded image and validate size and format.
 
     Raises:
-        ValueError: When the payload is oversized or is not a recognised image.
+        ValueError: When the file is empty, oversized, or not an image.
     """
-    if "," in data and data.startswith("data:"):
-        data = data.split(",", 1)[1]
-    decoded = base64.b64decode(data)
-    if len(decoded) > MAX_IMAGE_BYTES:
-        raise ValueError(f"Image exceeds the {MAX_IMAGE_BYTES // (1024 * 1024)} MB limit.")
-    if not _is_image_bytes(decoded):
-        raise ValueError("Uploaded file is not a recognised image format.")
-    return decoded
+    data = await f.read()
+    if not data:
+        raise ValueError(f"Image '{f.filename}' is empty.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError(
+            f"Image '{f.filename}' exceeds the "
+            f"{MAX_IMAGE_BYTES // (1024 * 1024)} MB limit."
+        )
+    if not _is_image_bytes(data):
+        raise ValueError(f"Image '{f.filename}' is not a recognised image format.")
+    return data
 
 
 # --------------- Routes ---------------
@@ -273,21 +272,10 @@ async def generate(
 
     image_bytes: list[bytes] = []
     for f in images:
-        data = await f.read()
-        if not data:
-            raise HTTPException(status_code=400, detail="Empty image upload detected.")
-        if len(data) > MAX_IMAGE_BYTES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Image '{f.filename}' exceeds the "
-                f"{MAX_IMAGE_BYTES // (1024 * 1024)} MB limit.",
-            )
-        if not _is_image_bytes(data):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Image '{f.filename}' is not a recognised image format.",
-            )
-        image_bytes.append(data)
+        try:
+            image_bytes.append(await _read_and_validate(f))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     logger.info(
         "api.generate.request",
@@ -320,25 +308,65 @@ async def generate(
     tags=["listing"],
 )
 async def batch_generate(
-    request: BatchGenerateRequest,
+    products: str = Form(
+        description="JSON array of product metadata; each item declares image_count"
+    ),
+    images: list[UploadFile] = File(
+        default=[],
+        description="All product images, appended in product order",
+    ),
 ) -> BatchGenerateResponse:
     """Generate listings for multiple products concurrently.
 
-    Each product carries its own images (base64-encoded), category, platform,
-    target language, and optional extra info. All products are processed in
-    parallel via ``asyncio.gather``.
+    Multipart request: the ``products`` form field holds a JSON array of
+    product metadata (category, platform, target language, extra info and
+    ``image_count``), and every image is uploaded as an ``images`` file part.
+    Multipart preserves part order, so images are sliced per product by their
+    declared ``image_count``.
     """
     settings = get_settings()
 
-    if not request.products:
+    # Parse product metadata JSON.
+    try:
+        raw_products = json.loads(products)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail=f"'products' is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(raw_products, list) or not raw_products:
         raise HTTPException(status_code=400, detail="At least one product is required.")
+    try:
+        metas = [BatchProductMeta(**item) for item in raw_products]
+    except Exception as exc:  # noqa: BLE001 - pydantic ValidationError & co.
+        raise HTTPException(
+            status_code=400, detail=sanitize_error(f"Invalid product metadata: {exc}")
+        ) from exc
+
+    # Validate the declared image counts against the uploaded parts, then
+    # slice the ordered file list into one group per product.
+    expected = sum(m.image_count for m in metas)
+    if expected != len(images):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Image count mismatch: metadata declares {expected} images "
+                f"but {len(images)} were uploaded."
+            ),
+        )
+    grouped: list[list[UploadFile]] = []
+    offset = 0
+    for m in metas:
+        grouped.append(images[offset : offset + m.image_count])
+        offset += m.image_count
 
     # Bound concurrent generations so we don't flood the remote LLM endpoint
     # (which otherwise triggers rate limits / connection resets).
     max_concurrency = max(1, settings.batch_max_concurrency)
     sem = asyncio.Semaphore(max_concurrency)
 
-    async def _process_one(item: BatchProductItem) -> BatchProductResult:
+    async def _process_one(
+        item: BatchProductMeta, files: list[UploadFile]
+    ) -> BatchProductResult:
         async with sem:
             t0 = time.perf_counter()
 
@@ -356,14 +384,14 @@ async def batch_generate(
                         elapsed_ms=_elapsed(),
                     )
 
-                # Decode images
-                if not item.images_base64:
+                # Read and validate this product's images
+                if not files:
                     return BatchProductResult(
                         product_index=item.product_index,
                         error="At least one image is required.",
                         elapsed_ms=_elapsed(),
                     )
-                if len(item.images_base64) > settings.vision_max_images:
+                if len(files) > settings.vision_max_images:
                     return BatchProductResult(
                         product_index=item.product_index,
                         error=f"At most {settings.vision_max_images} images are allowed.",
@@ -371,18 +399,11 @@ async def batch_generate(
                     )
 
                 try:
-                    image_bytes = [_decode_base64_image(img) for img in item.images_base64]
-                except Exception as exc:
+                    image_bytes = [await _read_and_validate(f) for f in files]
+                except Exception as exc:  # noqa: BLE001 - report per product
                     return BatchProductResult(
                         product_index=item.product_index,
-                        error=sanitize_error(f"Failed to decode image: {exc}"),
-                        elapsed_ms=_elapsed(),
-                    )
-
-                if any(not data for data in image_bytes):
-                    return BatchProductResult(
-                        product_index=item.product_index,
-                        error="Empty image data detected.",
+                        error=sanitize_error(str(exc)),
                         elapsed_ms=_elapsed(),
                     )
 
@@ -425,11 +446,12 @@ async def batch_generate(
 
     logger.info(
         "api.batch_generate.request",
-        num_products=len(request.products),
+        num_products=len(metas),
+        num_images=len(images),
     )
 
     results = await asyncio.gather(
-        *[_process_one(item) for item in request.products]
+        *[_process_one(m, files) for m, files in zip(metas, grouped)]
     )
     return BatchGenerateResponse(results=list(results))
 
