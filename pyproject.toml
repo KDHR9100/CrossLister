@@ -23,6 +23,9 @@ dependencies = [
     "openpyxl>=3.1",
     # Optional PDF rule-document support (app/rag/loader.py imports lazily).
     "pypdf>=4.0",
+    # Image downscaling/compression before sending to the vision model, so
+    # large uploads don't exceed the remote gateway's request-body limit.
+    "pillow>=10.0",
 ]
 
 [dependency-groups]

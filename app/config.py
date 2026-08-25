@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     vision_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"
     vision_max_images: int = 20
     vision_timeout_s: float = 120.0
+    # Downscale each image so its longest side is at most this many pixels,
+    # then re-encode as JPEG at the given quality. Keeps the request body small
+    # enough for the remote gateway (avoids 413 / connection resets on upload).
+    # Set vision_max_image_side to 0 to disable downscaling.
+    vision_max_image_side: int = 1280
+    vision_jpeg_quality: int = 85
 
     # -- Text LLM (listing generation / compliance check) --------------
     llm_mode: LLMMode = LLMMode.MOCK
