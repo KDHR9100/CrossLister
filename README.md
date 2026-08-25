@@ -204,7 +204,7 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 - `api`：任意托管的 OpenAI 兼容端点，填好 `*_API_BASE` 和 `*_API_KEY` 即可。
 
 > 自托管 vLLM 示例（需 GPU）：
-> `vllm serve Qwen/Qwen2.5-VL-7B-Instruct --limit-mm-per-prompt image=5`，
+> `vllm serve Qwen/Qwen2.5-VL-7B-Instruct --limit-mm-per-prompt image=20`，
 > 然后把 `VISION_API_BASE=http://localhost:8000/v1`、`VISION_MODE=local`。
 
 ---
@@ -217,10 +217,14 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 | GET | `/api/v1/platforms` | 返回支持的平台列表 |
 | GET | `/api/v1/languages` | 返回支持的 12 种目标语言 |
 | POST | `/api/v1/listing/generate` | 单个产品：multipart 上传图片 + 表单字段，生成合规 Listing |
-| POST | `/api/v1/listing/batch_generate` | 多产品并发：JSON body 传入多个产品，并发生成 Listing |
+| POST | `/api/v1/listing/batch_generate` | 多产品并发：multipart（products JSON 字段 + 按产品顺序的 images 文件域） |
 | GET | `/api/v1/import/template` | 下载批量导入 CSV 模板 |
 | POST | `/api/v1/import/parse` | 解析 CSV/Excel 文件，返回校验结果 |
 | POST | `/api/v1/rag/rebuild` | 重建平台规则向量索引 |
+| GET | `/api/v1/history` | 生成历史列表（索引摘要，最新在前） |
+| GET | `/api/v1/history/{record_id}` | 单条历史详情（完整 Listing + 图片文件名） |
+| GET | `/api/v1/history/{record_id}/images/{name}` | 读取历史中存储的压缩图片 |
+| GET | `/api/v1/diag` | 诊断：当前配置 + 模块加载时间（确认服务已加载新代码） |
 
 ### 响应字段说明
 
@@ -269,7 +273,7 @@ uv run pytest -q
 ```
 
 覆盖视觉解析、RAG loader/indexer/retriever、LangGraph 全链路（含合规回环）、
-以及 FastAPI 端到端 multipart 请求。
+FastAPI 端到端 multipart 请求，以及历史记录冷存储（落盘/裁剪/路径穿越防护/只读 API）。
 
 ---
 
@@ -281,16 +285,19 @@ CrossLister/
 │   ├── agents/            # LangGraph 图与各节点（vision/rag/generate/guardrails/translate）
 │   ├── api/               # FastAPI 路由 + 批量导入模块
 │   │   ├── routes.py      # API 端点定义
+│   │   ├── history.py     # 历史记录只读查看 API
 │   │   └── batch_import.py # CSV/Excel 解析与校验
 │   ├── guardrails/        # 违禁词过滤 + LLM 合规复核
+│   ├── history/           # 生成历史冷存储（纯文件，与主管线解耦）
 │   ├── llm/               # 共享文本 LLM 客户端
 │   ├── models/            # Pydantic 数据模型
 │   ├── rag/               # loader / indexer / retriever
-│   ├── utils/             # structlog 日志
+│   ├── utils/             # structlog 日志 + 图片压缩工具
 │   └── vision/            # 视觉客户端与 prompt
 ├── data/
 │   ├── platform_rules/    # Amazon / Shopee / Temu 规则文档
-│   └── chroma/            # 向量库持久化目录（git 忽略）
+│   ├── chroma/            # 向量库持久化目录（git 忽略）
+│   └── history/           # 生成历史冷存储（git 忽略，运行时自动创建）
 ├── scripts/build_index.py # 索引构建 CLI
 ├── static/index.html      # 前端单页面（中文界面）
 ├── tests/                 # 离线测试 + 测试数据

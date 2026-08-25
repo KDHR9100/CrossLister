@@ -17,6 +17,9 @@ posthog>=2.4.0,<6
 openpyxl>=3.1
 # Enables PDF platform-rule documents (app/rag/loader.py); safe to remove if unused.
 pypdf>=4.0
+# Image downscaling/compression before sending to the vision model and for
+# storing compressed copies in the generation history cold storage.
+pillow>=10.0
 
 # Development dependencies
 pytest>=8.2
