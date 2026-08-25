@@ -11,6 +11,7 @@ a single code path that only differs in ``base_url`` / ``api_key`` / model.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 from typing import Any
@@ -18,6 +19,7 @@ from typing import Any
 from app.config import Settings, VisionMode, get_settings
 from app.models.listing import VisualAnalysis
 from app.utils.logger import get_logger
+from app.utils.retry import is_retryable
 from app.utils.usage import add_usage
 from app.vision.prompts import build_vision_messages, parse_vision_json
 
@@ -135,11 +137,33 @@ class VisionClient:
             model=s.vision_model,
             num_images=len(images),
         )
-        response = await client.chat.completions.create(
-            model=s.vision_model,
-            messages=messages,
-            temperature=0.1,
-        )
+
+        # Retry transient errors (connection drops, rate limits, 5xx). The
+        # vision call is the first step of the pipeline, so a single dropped
+        # connection here would otherwise fail the whole product immediately.
+        max_retries = max(0, s.llm_max_retries)
+        response = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.chat.completions.create(
+                    model=s.vision_model,
+                    messages=messages,
+                    temperature=0.1,
+                )
+                break
+            except Exception as exc:  # noqa: BLE001 - classify below
+                if not is_retryable(exc) or attempt >= max_retries:
+                    logger.error("vision.request_failed", error=str(exc))
+                    raise
+                backoff_s = min(2 ** attempt, 8)  # 1s, 2s, 4s, capped at 8s
+                logger.warning(
+                    "vision.retry",
+                    attempt=attempt + 1,
+                    backoff_s=backoff_s,
+                    error=str(exc),
+                )
+                await asyncio.sleep(backoff_s)
+
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         raw = response.choices[0].message.content or ""

@@ -14,28 +14,10 @@ import time
 
 from app.config import LLMMode, Settings, get_settings
 from app.utils.logger import get_logger
+from app.utils.retry import is_retryable
 from app.utils.usage import add_usage
 
 logger = get_logger(__name__)
-
-
-def _is_retryable(exc: Exception) -> bool:
-    """Return True for transient errors worth retrying.
-
-    Connection drops, timeouts, rate limits and 5xx server errors are
-    transient; 4xx client errors (bad auth, invalid request) are not.
-    """
-    try:
-        import openai
-    except ImportError:  # pragma: no cover - openai always present in prod
-        return False
-    if isinstance(
-        exc, (openai.APIConnectionError, openai.APITimeoutError, openai.RateLimitError)
-    ):
-        return True
-    if isinstance(exc, openai.APIStatusError):
-        return getattr(exc, "status_code", 0) >= 500
-    return False
 
 
 class LLMClient:
@@ -126,7 +108,7 @@ class LLMClient:
                 return response.choices[0].message.content or ""
             except Exception as exc:  # noqa: BLE001 - classify below
                 # Only retry transient errors, and only while attempts remain.
-                if not _is_retryable(exc) or attempt >= max_retries:
+                if not is_retryable(exc) or attempt >= max_retries:
                     logger.error("llm.request_failed", error=str(exc))
                     raise
                 last_exc = exc
