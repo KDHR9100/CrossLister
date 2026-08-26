@@ -66,9 +66,9 @@ class Settings(BaseSettings):
 
     # -- Vision model --------------------------------------------------
     vision_mode: VisionMode = VisionMode.MOCK
-    vision_api_base: str = "http://localhost:8000/v1"
+    vision_api_base: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     vision_api_key: str = "EMPTY"
-    vision_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"
+    vision_model: str = "qwen3.6-flash"
     vision_max_images: int = 20
     vision_timeout_s: float = 120.0
     # Downscale each image so its longest side is at most this many pixels,
@@ -80,9 +80,9 @@ class Settings(BaseSettings):
 
     # -- Text LLM (listing generation / compliance check) --------------
     llm_mode: LLMMode = LLMMode.MOCK
-    llm_api_base: str = "http://localhost:8000/v1"
+    llm_api_base: str = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     llm_api_key: str = "EMPTY"
-    llm_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    llm_model: str = "qwen3.6-flash"
     llm_timeout_s: float = 120.0
     # Transient-error retries for LLM calls (connection drops, rate limits, 5xx).
     llm_max_retries: int = 3

@@ -12,7 +12,7 @@
 
 ## ✨ 核心特性
 
-- **多模态理解**：用 Qwen2.5-VL-7B 从 1–20 张商品图中提取类目、颜色、材质、卖点与使用场景。
+- **多模态理解**：用 qwen3.6-flash 从 1–20 张商品图中提取类目、颜色、材质、卖点与使用场景。
 - **多产品并发处理**：支持同时录入多个产品，批量生成 Listing，所有产品并发处理。
 - **批量导入**：通过 CSV/Excel 模板文件一次性导入多个产品信息，自动校验并提示错误。
 - **生成历史记录（冷存储）**：每次生成完成后异步落盘（文字 + 压缩图片，可配置），
@@ -38,9 +38,9 @@ flowchart LR
     end
 
     subgraph Graph[LangGraph StateGraph]
-        V[vision 节点<br/>Qwen2.5-VL-7B<br/>提取卖点]
+        V[vision 节点<br/>qwen3.6-flash<br/>提取卖点]
         R[rag 节点<br/>Qwen3-Embedding-0.6B + ChromaDB<br/>检索平台规则]
-        G[generate 节点<br/>Qwen2.5-7B<br/>起草 Listing]
+        G[generate 节点<br/>qwen3.6-flash<br/>起草 Listing]
         C{guardrails 节点<br/>违禁词 + LLM 复核}
         T[translate 节点<br/>多语言 + 中文翻译]
     end
@@ -193,8 +193,8 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 
 | 能力 | 默认模型 | 模式开关 | 端点配置 |
 | --- | --- | --- | --- |
-| 视觉理解 | `Qwen/Qwen2.5-VL-7B-Instruct` | `VISION_MODE` | `VISION_API_BASE` / `VISION_API_KEY` |
-| 文本生成 / 合规 / 翻译 | `Qwen/Qwen2.5-7B-Instruct` | `LLM_MODE` | `LLM_API_BASE` / `LLM_API_KEY` |
+| 视觉理解 | `qwen3.6-flash` | `VISION_MODE` | `VISION_API_BASE` / `VISION_API_KEY` |
+| 文本生成 / 合规 / 翻译 | `qwen3.6-flash` | `LLM_MODE` | `LLM_API_BASE` / `LLM_API_KEY` |
 | 向量嵌入 | `Qwen/Qwen3-Embedding-0.6B` | `EMBEDDING_MODE` | `EMBEDDING_API_BASE` / `EMBEDDING_API_KEY` |
 
 每种模式的取值：
@@ -203,7 +203,7 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 - `local`：你自己用 vLLM 起的 OpenAI 兼容服务（`docker-compose.yml` 里带模板）。
 - `api`：任意托管的 OpenAI 兼容端点，填好 `*_API_BASE` 和 `*_API_KEY` 即可。
 
-> 自托管 vLLM 示例（需 GPU）：
+> 默认使用托管端点的 `qwen3.6-flash`；如需自托管（需 GPU），可用
 > `vllm serve Qwen/Qwen2.5-VL-7B-Instruct --limit-mm-per-prompt image=20`，
 > 然后把 `VISION_API_BASE=http://localhost:8000/v1`、`VISION_MODE=local`。
 
