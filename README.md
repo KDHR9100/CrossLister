@@ -246,7 +246,7 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 | GET | `/api/v1/history/{record_id}` | 单条历史详情（完整 Listing + 图片文件名） |
 | DELETE | `/api/v1/history/{record_id}` | 删除一条历史记录（目录 + 索引条目） |
 | GET | `/api/v1/history/{record_id}/images/{name}` | 读取历史中存储的压缩图片 |
-| GET | `/api/v1/diag` | 诊断：当前配置 + 模块加载时间（确认服务已加载新代码） |
+| GET | `/api/v1/diag` | 诊断：当前配置 + 图片压缩管线健康状态 + 模块加载时间（确认服务已加载新代码） |
 
 ### 响应字段说明
 

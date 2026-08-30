@@ -190,3 +190,63 @@ def test_health_payload_shape_unchanged() -> None:
     body = client.get("/api/v1/health").json()
     assert body["status"] == "ok"
     assert set(body) >= {"status", "version", "vision_mode", "llm_mode", "embedding_mode"}
+
+
+# -- Hardening: Pillow availability surfaced in /diag and at startup ---------
+
+
+def test_diag_reports_image_pipeline_health() -> None:
+    body = client.get("/api/v1/diag").json()
+    ip = body["image_pipeline"]
+    assert ip["pillow_installed"] is True
+    assert ip["compression_active"] is True
+
+
+def test_diag_flags_compression_disabled_without_pillow(monkeypatch) -> None:
+    import app.api.routes as routes
+
+    monkeypatch.setattr(routes, "pillow_available", lambda: False)
+    body = client.get("/api/v1/diag").json()
+    assert body["image_pipeline"]["pillow_installed"] is False
+    assert body["image_pipeline"]["compression_active"] is False
+
+
+class _CaptureLogger:
+    """Stand-in for the structlog logger capturing error/warning events."""
+
+    def __init__(self) -> None:
+        self.errors: list[str] = []
+
+    def info(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def warning(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def error(self, event: str, **kwargs: object) -> None:
+        self.errors.append(event)
+
+
+def test_startup_logs_error_when_pillow_missing(monkeypatch) -> None:
+    import app.main as main_mod
+
+    fake = _CaptureLogger()
+    monkeypatch.setattr(main_mod, "logger", fake)
+    monkeypatch.setattr(main_mod, "pillow_available", lambda: False)
+
+    with TestClient(app):  # context manager runs the lifespan startup checks
+        pass
+
+    assert "image_pipeline.pillow_missing" in fake.errors
+
+
+def test_startup_is_quiet_when_pillow_present(monkeypatch) -> None:
+    import app.main as main_mod
+
+    fake = _CaptureLogger()
+    monkeypatch.setattr(main_mod, "logger", fake)
+
+    with TestClient(app):
+        pass
+
+    assert "image_pipeline.pillow_missing" not in fake.errors

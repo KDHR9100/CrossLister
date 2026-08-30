@@ -18,7 +18,10 @@ from app import __version__
 from app.api.history import router as history_router
 from app.api.routes import router as api_router
 from app.config import get_settings, BASE_DIR
+from app.utils.images import pillow_available
 from app.utils.logger import get_logger, setup_logging
+
+logger = get_logger(__name__)
 
 STATIC_DIR = BASE_DIR / "static"
 
@@ -27,7 +30,6 @@ def create_app() -> FastAPI:
     """Build and configure the FastAPI application."""
     settings = get_settings()
     setup_logging(settings.debug)
-    logger = get_logger(__name__)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -40,8 +42,27 @@ def create_app() -> FastAPI:
             embedding_mode=settings.embedding_mode.value,
         )
         await _check_rag_index()
+        _check_image_pipeline()
         yield
         logger.info("app.shutdown")
+
+    def _check_image_pipeline() -> None:
+        """Fail loudly (in logs) when Pillow is missing.
+
+        ``preprocess_image`` degrades to pass-through without Pillow, so a
+        missing dependency would silently disable request compression (413
+        risk returns) and history thumbnails. Surface it once at startup.
+        """
+        if pillow_available():
+            return
+        logger.error(
+            "image_pipeline.pillow_missing",
+            impact=(
+                "Pillow 未安装：发给视觉模型的图片不会压缩（413/连接中断风险回归），"
+                "历史记录将保存原图。请在当前运行环境安装 pillow，"
+                "或改用 `uv run uvicorn app.main:app` 以使用 uv.lock 管理的完整依赖。"
+            ),
+        )
 
     async def _check_rag_index() -> None:
         """Warn when a platform-rule collection is missing/empty at startup.

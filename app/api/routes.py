@@ -25,6 +25,7 @@ from app.config import Settings, get_settings
 from app.history import store as history_store
 from app.models.listing import ListingResponse, Platform
 from app.rag.indexer import build_index
+from app.utils.images import pillow_available
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -361,15 +362,24 @@ async def diagnostics() -> dict:
 
     Lets operators confirm a running server actually picked up new code after
     a restart: if ``module_started_at`` predates the last code change or
-    restart, the server is stale and must be restarted.
+    restart, the server is stale and must be restarted. Also reports whether
+    the image pipeline is intact — without Pillow, compression silently
+    degrades to pass-through and this makes that visible.
     """
     s = get_settings()
+    pillow_ok = pillow_available()
     return {
         "module_started_at": _MODULE_STARTED_AT,
         "vision": {
             "mode": s.vision_mode.value,
             "model": s.vision_model,
             "max_images": s.vision_max_images,
+            "max_image_side": s.vision_max_image_side,
+            "jpeg_quality": s.vision_jpeg_quality,
+        },
+        "image_pipeline": {
+            "pillow_installed": pillow_ok,
+            "compression_active": pillow_ok and s.vision_max_image_side > 0,
             "max_image_side": s.vision_max_image_side,
             "jpeg_quality": s.vision_jpeg_quality,
         },

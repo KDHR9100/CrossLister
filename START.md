@@ -10,7 +10,14 @@
 
 ### 1. 创建环境
 
-#### 方式一：使用 Conda（推荐）
+#### 方式一：使用 uv（推荐）
+
+```bash
+# 使用 uv 创建虚拟环境并安装依赖（以 uv.lock 为准，与生产/Docker 完全一致）
+uv sync
+```
+
+#### 方式二：使用 Conda
 
 ```bash
 # 创建并激活 conda 环境
@@ -21,13 +28,6 @@ cd CrossLister
 # 安装依赖（依赖清单以 uv.lock 为唯一事实来源，从中导出后用 pip 装）
 pip install uv        # 仅首次需要
 uv export --format requirements-txt --no-hashes | pip install -r -
-```
-
-#### 方式二：使用 uv
-
-```bash
-# 使用 uv 创建虚拟环境并安装依赖
-uv sync
 ```
 
 #### 方式三：使用 venv
@@ -42,6 +42,10 @@ source .venv/bin/activate  # Linux/macOS
 pip install uv        # 仅首次需要
 uv export --format requirements-txt --no-hashes | pip install -r -
 ```
+
+> **为什么推荐 uv**：conda/venv 手工装依赖容易出现"服务能跑但缺件"的静默
+> 降级（例如缺 pillow 时图片压缩会悄悄失效）。启动日志和 `/api/v1/diag`
+> 中的 `image_pipeline.pillow_installed` 可以快速确认。
 
 ### 2. 配置环境变量
 

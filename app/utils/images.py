@@ -12,6 +12,21 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def pillow_available() -> bool:
+    """Return True when Pillow is importable in the current environment.
+
+    ``preprocess_image`` degrades gracefully (returns the original bytes) when
+    Pillow is missing, which silently disables request-body compression and
+    history thumbnails. Startup checks and ``/api/v1/diag`` use this helper to
+    surface that condition loudly instead of letting it hide until a 413.
+    """
+    try:
+        import PIL  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def ImageOps_exif_transpose(img):
     """Apply EXIF orientation and return the corrected image (safe wrapper)."""
     try:

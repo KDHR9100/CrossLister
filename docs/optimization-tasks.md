@@ -66,3 +66,4 @@
 | 2026-08-30 | P2 合规强化 | (见 git log) | structural_validator 落地；违规/警告分级防误报空转；测试数 86→109 |
 | 2026-08-30 | P3 体验 | (见 git log) | SSE 端点 batch_generate_stream；前端真进度+占位渲染；启动索引检查；测试数 109→112 |
 | 2026-08-30 | P4 RAG/历史/部署 | (见 git log) | RAG 阈值、历史删除/重建/过滤、可选鉴权、Dockerfile --no-sync、公共重试 helper、移除 requirements.txt；测试数 112→124 |
+| 2026-08-30 | 加固 | (见 git log) | 排查 Pillow 缺失静默降级：启动即 ERROR 告警 + /diag 暴露 image_pipeline 状态；START.md 推荐 uv 启动；测试数 124→128 |
