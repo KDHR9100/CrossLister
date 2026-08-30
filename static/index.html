@@ -277,7 +277,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 <input type="file" id="importFileInput" accept=".csv,.xlsx,.xls">
 </div>
 <div class="import-actions">
-<a href="/api/v1/import/template" download="product_import_template.csv">&#11015; 下载导入模板</a>
+<a href="javascript:void(0)" onclick="downloadImportTemplate()">&#11015; 下载导入模板</a>
 <button onclick="openGuideModal()">&#128214; 查看操作指南</button>
 </div>
 </div>
@@ -371,7 +371,24 @@ A: 导入的产品会添加到左侧产品标签页中，您可以逐个切换�
 <div class="modal-body" id="historyModalBody">
 <!-- List view -->
 <div id="historyListView">
+<div style="display:flex;gap:.6rem;align-items:center;margin-bottom:.8rem;flex-wrap:wrap">
+  <label style="font-size:.8rem;color:var(--text-secondary)">平台</label>
+  <select id="historyPlatformFilter" onchange="loadHistoryList()" style="padding:.35rem .5rem;border:1px solid var(--border);border-radius:6px;font-size:.8rem">
+    <option value="">全部</option>
+    <option value="amazon">Amazon</option>
+    <option value="shopee">Shopee</option>
+    <option value="temu">Temu</option>
+  </select>
+  <label style="font-size:.8rem;color:var(--text-secondary)">状态</label>
+  <select id="historyStatusFilter" onchange="loadHistoryList()" style="padding:.35rem .5rem;border:1px solid var(--border);border-radius:6px;font-size:.8rem">
+    <option value="">全部</option>
+    <option value="success">有成功</option>
+    <option value="failed">全部失败</option>
+  </select>
+</div>
+<div id="historyListBody">
 <div class="empty-state" style="padding:2rem"><p>加载中...</p></div>
+</div>
 </div>
 <!-- Detail view -->
 <div id="historyDetailView" style="display:none"></div>
@@ -418,6 +435,36 @@ function showToast(message, type) {
   t.lastChild.onclick = () => t.remove();
   wrap.appendChild(t);
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .4s'; setTimeout(() => t.remove(), 400); }, 4200);
+}
+
+async function downloadImportTemplate() {
+  const resp = await apiFetch('/api/v1/import/template');
+  if (!resp.ok) { showToast('模板下载失败：HTTP ' + resp.status, 'error'); return; }
+  const blob = await resp.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'product_import_template.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Shared API fetch: attaches the optional X-API-Key (localStorage) and, on a
+// 401, prompts once for the key and retries — zero friction when auth is off.
+async function apiFetch(url, options) {
+  const opts = Object.assign({}, options || {});
+  opts.headers = Object.assign({}, opts.headers || {});
+  const saved = localStorage.getItem('xl_api_key');
+  if (saved) opts.headers['X-API-Key'] = saved;
+  const resp = await fetch(url, opts);
+  if (resp.status === 401) {
+    const key = prompt('此服务已开启 API Key 鉴权，请输入 X-API-Key：');
+    if (key) {
+      localStorage.setItem('xl_api_key', key);
+      opts.headers['X-API-Key'] = key;
+      return fetch(url, opts);
+    }
+  }
+  return resp;
 }
 
 function createEmptyProduct() {
@@ -741,7 +788,7 @@ async function handleGenerate() {
     // Streaming endpoint: the server pushes one SSE frame per pipeline node
     // per product, so the UI shows real progress and results render as soon
     // as each product finishes (no more fake step animation).
-    const resp = await fetch('/api/v1/listing/batch_generate_stream', {
+    const resp = await apiFetch('/api/v1/listing/batch_generate_stream', {
       method: 'POST',
       body: fd,
       signal: controller.signal
@@ -1056,7 +1103,7 @@ async function handleImportFile(file) {
   fd.append('file', file);
 
   try {
-    const resp = await fetch('/api/v1/import/parse', { method: 'POST', body: fd });
+    const resp = await apiFetch('/api/v1/import/parse', { method: 'POST', body: fd });
     if (!resp.ok) {
       const t = await resp.text();
       throw new Error(t || ('HTTP ' + resp.status));
@@ -1270,10 +1317,14 @@ function formatHistTime(iso) {
 }
 
 async function loadHistoryList() {
-  const view = document.getElementById('historyListView');
+  const view = document.getElementById('historyListBody');
+  const platform = document.getElementById('historyPlatformFilter').value;
+  const status = document.getElementById('historyStatusFilter').value;
   view.innerHTML = '<div class="empty-state" style="padding:2rem"><p>加载中...</p></div>';
   try {
-    const resp = await fetch('/api/v1/history?limit=100');
+    const resp = await apiFetch('/api/v1/history?limit=100'
+      + (platform ? '&platform=' + encodeURIComponent(platform) : '')
+      + (status ? '&status=' + encodeURIComponent(status) : ''));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (!data.enabled) {
@@ -1294,13 +1345,28 @@ async function loadHistoryList() {
         <td>${r.success_count}/${r.product_count}</td>
         <td>${escapeHtml((r.platforms || []).join(', '))}</td>
         <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeAttr(r.title_preview || '')}">${escapeHtml(r.title_preview || '-')}</td>
-        <td><button class="link-btn" onclick="viewHistoryRecord('${escapeAttr(r.record_id)}')">查看</button></td>
+        <td style="white-space:nowrap">
+          <button class="link-btn" onclick="viewHistoryRecord('${escapeAttr(r.record_id)}')">查看</button>
+          <button class="link-btn" style="color:#e74c3c" onclick="deleteHistoryRecord('${escapeAttr(r.record_id)}')">删除</button>
+        </td>
       </tr>`;
     });
     html += '</tbody></table>';
     view.innerHTML = html;
   } catch (err) {
     view.innerHTML = '<div class="error-msg"><strong>历史记录加载失败：</strong>' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+async function deleteHistoryRecord(recordId) {
+  if (!confirm('确定删除这条历史记录吗？删除后不可恢复。')) return;
+  try {
+    const resp = await apiFetch('/api/v1/history/' + encodeURIComponent(recordId), { method: 'DELETE' });
+    if (!resp.ok) throw new Error(resp.status === 404 ? '记录不存在或已被清理' : 'HTTP ' + resp.status);
+    showToast('历史记录已删除', 'success');
+    loadHistoryList();
+  } catch (err) {
+    showToast('删除失败：' + err.message, 'error');
   }
 }
 
@@ -1312,7 +1378,7 @@ async function viewHistoryRecord(recordId) {
   document.getElementById('historyBackBtn').style.display = '';
   detail.innerHTML = '<div class="empty-state" style="padding:2rem"><p>加载中...</p></div>';
   try {
-    const resp = await fetch('/api/v1/history/' + encodeURIComponent(recordId));
+    const resp = await apiFetch('/api/v1/history/' + encodeURIComponent(recordId));
     if (!resp.ok) {
       throw new Error(resp.status === 404 ? '记录不存在或已被清理' : 'HTTP ' + resp.status);
     }

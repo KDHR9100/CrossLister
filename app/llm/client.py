@@ -9,13 +9,12 @@ outputs themselves, keeping the whole pipeline runnable offline.
 
 from __future__ import annotations
 
-import asyncio
 import time
 
 from app.config import LLMMode, Settings, get_settings
 from app.utils.logger import get_logger
 from app.utils.openai_client import get_openai_client
-from app.utils.retry import is_retryable
+from app.utils.retry import with_retries
 from app.utils.usage import add_usage
 
 logger = get_logger(__name__)
@@ -114,31 +113,29 @@ class LLMClient:
         if max_output_tokens > 0:
             request_kwargs["max_tokens"] = max_output_tokens
 
-        last_exc: Exception | None = None
-        for attempt in range(max_retries + 1):
+        async def _attempt() -> str:
             started = time.perf_counter()
-            logger.info("llm.request", model=s.llm_model, attempt=attempt + 1)
-            try:
-                response = await client.chat.completions.create(**request_kwargs)
-                latency_ms = int((time.perf_counter() - started) * 1000)
-                logger.info("llm.response", latency_ms=latency_ms)
-                add_usage(getattr(response, "usage", None))
-                return response.choices[0].message.content or ""
-            except Exception as exc:  # noqa: BLE001 - classify below
-                # Only retry transient errors, and only while attempts remain.
-                if not is_retryable(exc) or attempt >= max_retries:
-                    logger.error("llm.request_failed", error=str(exc))
-                    raise
-                last_exc = exc
-                backoff_s = min(2 ** attempt, 8)  # 1s, 2s, 4s, capped at 8s
-                logger.warning(
-                    "llm.retry",
-                    attempt=attempt + 1,
-                    backoff_s=backoff_s,
-                    error=str(exc),
-                )
-                await asyncio.sleep(backoff_s)
+            logger.info("llm.request", model=s.llm_model)
+            response = await client.chat.completions.create(**request_kwargs)
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            logger.info("llm.response", latency_ms=latency_ms)
+            add_usage(getattr(response, "usage", None))
+            return response.choices[0].message.content or ""
 
-        # Unreachable: the loop either returns or re-raises, but keeps the
-        # type-checker satisfied about a guaranteed return path.
-        raise last_exc  # pragma: no cover
+        def _log_retry(attempt: int, backoff_s: float, exc: Exception) -> None:
+            logger.warning(
+                "llm.retry", attempt=attempt, backoff_s=backoff_s, error=str(exc)
+            )
+
+        try:
+            # Only transient errors (connection drops, rate limits, 5xx) are
+            # retried, via the shared backoff loop.
+            return await with_retries(
+                _attempt,
+                max_retries=max_retries,
+                what="llm.chat",
+                on_retry=_log_retry,
+            )
+        except Exception as exc:  # noqa: BLE001 - final failure is logged once
+            logger.error("llm.request_failed", error=str(exc))
+            raise

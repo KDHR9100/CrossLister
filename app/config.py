@@ -106,6 +106,10 @@ class Settings(BaseSettings):
     embedding_api_base: str = "http://localhost:8000/v1"
     embedding_api_key: str = "EMPTY"
     rag_top_k: int = 4
+    # Drop retrieved rules whose similarity falls below this floor
+    # (cosine similarity mapped to [-1, 1]; default 0 keeps everything that is
+    # not anti-correlated, so only clearly unrelated chunks are filtered).
+    rag_min_score: float = 0.0
     # When true, a missing/empty platform-rule collection detected at startup
     # is rebuilt automatically in the background (embedding model permitting).
     rag_autobuild_on_startup: bool = False
@@ -124,6 +128,12 @@ class Settings(BaseSettings):
     history_save_images: bool = True
     # Oldest records are pruned once the count exceeds this cap.
     history_max_records: int = 200
+
+    # -- Security ----------------------------------------------------------
+    # When set, every /api/* call (except /api/v1/health) must present this
+    # shared secret in the X-API-Key header. Empty string disables auth,
+    # keeping the zero-config single-user experience.
+    auth_api_key: str = ""
 
 
 @lru_cache

@@ -18,8 +18,8 @@ conda create -n crosslister python=3.11 -y
 conda activate crosslister
 cd CrossLister
 
-# 安装依赖
-pip install -r requirements.txt
+# 安装依赖（从 pyproject.toml / uv.lock 导出，或直接用方式二）
+uv export --format requirements-txt --no-hashes | pip install -r -
 ```
 
 #### 方式二：使用 uv
@@ -38,7 +38,7 @@ source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
 
 # 安装依赖
-pip install -r requirements.txt
+uv export --format requirements-txt --no-hashes | pip install -r -
 ```
 
 ### 2. 配置环境变量

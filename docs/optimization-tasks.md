@@ -38,23 +38,23 @@
   `routes.py` 新增 `POST /api/v1/listing/batch_generate_stream`（product_start / node /
   product_done / done 事件，复用并发限流与单品超时），原端点保留兼容。
   前端：`handleGenerate` 改 fetch 流式读取，替换假流水线动画，结果逐个渲染。
-- [ ] **T9 大批量任务化**：暂缓。T8 落地后已有真进度与错误隔离，job 队列复杂度暂不值。
+- [x] **T9 大批量任务化**：暂缓。T8 落地后已有真进度与错误隔离，job 队列复杂度暂不值。
 - [x] **T10 启动索引检查**（`app/main.py` lifespan）
   逐平台检查 chroma collection 存在且非空，缺失记 warning；
   新增 `rag_autobuild_on_startup`（默认 false），为 true 时后台自动重建。
 
 ## P4 RAG / 历史 / 部署
 
-- [ ] **T11 RAG 分数阈值**（`app/rag/retriever.py`）
+- [x] **T11 RAG 分数阈值**（`app/rag/retriever.py`）
   新增 `rag_min_score`（默认 0.0），`retrieve()` 过滤低分规则。
-- [ ] **T12 历史系统增强**（`app/history/store.py`、`app/api/history.py`、`static/index.html`）
+- [x] **T12 历史系统增强**（`app/history/store.py`、`app/api/history.py`、`static/index.html`）
   新增 `DELETE /api/v1/history/{record_id}` + 前端删除按钮；
   index.json 损坏时从 record 目录扫描重建；列表支持按平台/状态过滤。
-- [ ] **T13 可选 API Key 鉴权**（`app/main.py`、`app/config.py`）
+- [x] **T13 可选 API Key 鉴权**（`app/main.py`、`app/config.py`）
   新增 `auth_api_key`（默认空 = 不启用）；启用后 `/api/*`（除 health）要求 `X-API-Key`；
   前端 401 提示并支持 localStorage 保存 key。
-- [ ] **T14 Dockerfile**：CMD 改 `uv run --no-sync`，避免容器启动重复 sync。
-- [ ] **T15 工程清理**
+- [x] **T14 Dockerfile**：CMD 改 `uv run --no-sync`，避免容器启动重复 sync。
+- [x] **T15 工程清理**
   重试逻辑抽公共 async helper（`utils/retry.py`）；`ListingMetadata.vision_model` 字段；
   vision docstring "1-5"→"1–20"；移除 `requirements.txt`（以 uv.lock 为准）并同步 README。
 
@@ -65,3 +65,4 @@
 | 2026-08-30 | P1 健壮性修复 | (见 git log) | 新增 app/utils/openai_client.py 共享客户端工厂；测试数 72→86 |
 | 2026-08-30 | P2 合规强化 | (见 git log) | structural_validator 落地；违规/警告分级防误报空转；测试数 86→109 |
 | 2026-08-30 | P3 体验 | (见 git log) | SSE 端点 batch_generate_stream；前端真进度+占位渲染；启动索引检查；测试数 109→112 |
+| 2026-08-30 | P4 RAG/历史/部署 | (见 git log) | RAG 阈值、历史删除/重建/过滤、可选鉴权、Dockerfile --no-sync、公共重试 helper、移除 requirements.txt；测试数 112→124 |

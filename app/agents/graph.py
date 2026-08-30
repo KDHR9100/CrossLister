@@ -24,7 +24,7 @@ from app.agents.nodes import (
     vision_node,
 )
 from app.agents.state import AgentState
-from app.config import LLMMode, Settings, get_settings
+from app.config import LLMMode, Settings, VisionMode, get_settings
 from app.models.compliance import ComplianceResult
 from app.models.listing import ListingMetadata, ListingResponse, VisualAnalysis
 from app.utils.logger import get_logger
@@ -223,6 +223,9 @@ def _to_response(
     model_used = (
         settings.llm_model if settings.llm_mode == LLMMode.API else "mock"
     )
+    vision_model_used = (
+        settings.vision_model if settings.vision_mode != VisionMode.MOCK else "mock"
+    )
 
     return ListingResponse(
         title=str(final.get("title", "")),
@@ -233,6 +236,7 @@ def _to_response(
         visual_analysis=visual,
         metadata=ListingMetadata(
             model_used=model_used,
+            vision_model=vision_model_used,
             latency_ms=latency_ms,
             rag_chunks_used=len(rules),
             total_tokens=total_tokens,

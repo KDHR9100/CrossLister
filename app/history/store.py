@@ -191,16 +191,102 @@ async def save_record_async(
         return None
 
 
-def list_records(history_dir: Path, limit: int = 100) -> list[dict[str, Any]]:
-    """Return index summaries, newest first."""
+def delete_record(history_dir: Path, record_id: str) -> bool:
+    """Delete one record: its directory plus its index entry.
+
+    Returns True when the record existed and was removed. The id is validated
+    against the strict record-id pattern, so path traversal is impossible.
+    """
+    if not _RECORD_ID_RE.match(record_id):
+        return False
+    with _fs_lock:
+        rdir = history_dir / record_id
+        existed = rdir.exists()
+        shutil.rmtree(rdir, ignore_errors=True)
+        index_path = history_dir / _INDEX_FILE
+        if index_path.exists():
+            try:
+                records = json.loads(index_path.read_text(encoding="utf-8")).get(
+                    "records", []
+                )
+            except Exception:  # noqa: BLE001 - corrupt index: treated as empty
+                records = []
+            records = [r for r in records if r.get("record_id") != record_id]
+            index_path.write_text(
+                json.dumps({"records": records}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+    if existed:
+        logger.info("history.deleted", record_id=record_id)
+    return existed
+
+
+def rebuild_index(history_dir: Path) -> int:
+    """Rebuild index.json from the record directories on disk.
+
+    Recovers the summaries when the index file is corrupt or lost while the
+    per-record directories are still intact. Returns the number of records
+    indexed, newest first.
+    """
+    summaries: list[dict[str, Any]] = []
+    if history_dir.exists():
+        for rdir in sorted(history_dir.iterdir()):
+            if not rdir.is_dir() or not _RECORD_ID_RE.match(rdir.name):
+                continue
+            record_file = rdir / "record.json"
+            if not record_file.exists():
+                continue
+            try:
+                record = json.loads(record_file.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 - unreadable record: skip it
+                logger.warning("history.record_corrupt", record_id=rdir.name)
+                continue
+            summaries.append(_build_summary(record))
+    summaries.sort(key=lambda s: s["record_id"], reverse=True)
+    with _fs_lock:
+        (history_dir / _INDEX_FILE).write_text(
+            json.dumps({"records": summaries}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    logger.info("history.index_rebuilt", records=len(summaries))
+    return len(summaries)
+
+
+def list_records(
+    history_dir: Path,
+    limit: int = 100,
+    platform: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return index summaries, newest first, with optional filters.
+
+    Args:
+        history_dir: Root directory of the history cold storage.
+        limit: Maximum number of summaries to return.
+        platform: Keep only records targeting this platform.
+        status: "success" keeps records with at least one success,
+            "failed" keeps records where every product failed.
+    """
     index_path = history_dir / _INDEX_FILE
     if not index_path.exists():
         return []
     try:
         records = json.loads(index_path.read_text(encoding="utf-8")).get("records", [])
-    except Exception:  # noqa: BLE001 - corrupt index reads as empty
-        logger.warning("history.index_corrupt", path=str(index_path))
-        return []
+    except Exception:  # noqa: BLE001 - corrupt index: rebuild from disk
+        logger.warning("history.index_corrupt_rebuilding", path=str(index_path))
+        try:
+            rebuild_index(history_dir)
+            records = json.loads(index_path.read_text(encoding="utf-8")).get(
+                "records", []
+            )
+        except Exception:  # noqa: BLE001 - still unreadable: start empty
+            return []
+    if platform:
+        records = [r for r in records if platform in (r.get("platforms") or [])]
+    if status == "success":
+        records = [r for r in records if r.get("success_count", 0) > 0]
+    elif status == "failed":
+        records = [r for r in records if r.get("success_count", 0) == 0]
     return records[: max(0, limit)]
 
 

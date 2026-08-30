@@ -98,6 +98,7 @@ class RuleRetriever:
             include=["documents", "metadatas", "distances"],
         )
 
+        min_score = self._settings.rag_min_score
         rules: list[RetrievedRule] = []
         ids = result.get("ids", [[]])[0]
         documents = result.get("documents", [[]])[0]
@@ -110,6 +111,8 @@ class RuleRetriever:
             metadata = metadata or {}
             # Chroma cosine distance is in [0, 2]; map to similarity in [-1, 1].
             score = 1.0 - float(distance)
+            if score < min_score:
+                continue  # irrelevant chunk: not worth prompt budget
             rules.append(
                 RetrievedRule(
                     rule_id=metadata.get("rule_id", _id),

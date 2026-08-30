@@ -19,7 +19,8 @@
   纯文件系统存储、与主流程完全解耦，前端可随时回看历史结果；超限自动清理最旧记录。
 - **平台规则 RAG**：内置 Amazon / Shopee / Temu 规则文档，用 Qwen3-Embedding-0.6B 向量化后按平台
   分 collection 存入 ChromaDB，按商品语义检索最相关的规则条目喂给生成模型。
-- **自研合规护栏**：先做确定性的分平台违禁词扫描，再由 LLM 做语义复核；
+- **自研合规护栏**：三层防线——平台硬性结构规则纯代码校验（标题长度/bullet
+  数量/关键词字节/URL/价格字样，零成本零幻觉）、分平台违禁词扫描、LLM 语义复核；
   不合格则带着违规点**回到生成节点重写，最多循环 3 次**。
 - **多语言输出 + 中文翻译**：通过合规后的 Listing 生成目标语言内容，并附带严格对照的中文翻译。
 - **三档运行模式**：`mock`（离线可跑，零依赖零网络）/ `local`（自托管 vLLM）/ `api`
@@ -207,6 +208,24 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 > `vllm serve Qwen/Qwen2.5-VL-7B-Instruct --limit-mm-per-prompt image=20`，
 > 然后把 `VISION_API_BASE=http://localhost:8000/v1`、`VISION_MODE=local`。
 
+其他有用的配置项（见 `.env.example`）：
+
+| 配置 | 默认 | 说明 |
+| --- | --- | --- |
+| `LLM_MAX_OUTPUT_TOKENS` | `2048` | 每次 LLM 调用的生成 token 上限，防失控生成 |
+| `RAG_MIN_SCORE` | `0.0` | 检索相似度下限，低于该值的规则不进入 prompt |
+| `RAG_AUTOBUILD_ON_STARTUP` | `false` | 启动时发现规则索引缺失/为空则后台自动重建 |
+| `AUTH_API_KEY` | 空 | 设置后所有 `/api/*`（除 health）要求 `X-API-Key` 请求头 |
+
+---
+
+## 🔐 安全说明
+
+服务默认面向本机/可信内网、零配置可用。若部署在共享网络，建议在 `.env`
+中设置 `AUTH_API_KEY`：此后除健康检查外的全部 API 调用都必须携带
+`X-API-Key: <你的密钥>` 请求头。Web 界面会在遇到 401 时自动弹出输入框，
+密钥保存在浏览器 localStorage 并自动附带。
+
 ---
 
 ## 🔌 API 一览
@@ -218,11 +237,13 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 | GET | `/api/v1/languages` | 返回支持的 12 种目标语言 |
 | POST | `/api/v1/listing/generate` | 单个产品：multipart 上传图片 + 表单字段，生成合规 Listing |
 | POST | `/api/v1/listing/batch_generate` | 多产品并发：multipart（products JSON 字段 + 按产品顺序的 images 文件域） |
+| POST | `/api/v1/listing/batch_generate_stream` | 同 batch_generate，但以 SSE 流式推送 `product_start` / `node` / `product_done` / `done` 事件，前端展示真实进度 |
 | GET | `/api/v1/import/template` | 下载批量导入 CSV 模板 |
 | POST | `/api/v1/import/parse` | 解析 CSV/Excel 文件，返回校验结果 |
 | POST | `/api/v1/rag/rebuild` | 重建平台规则向量索引 |
-| GET | `/api/v1/history` | 生成历史列表（索引摘要，最新在前） |
+| GET | `/api/v1/history` | 生成历史列表（索引摘要，最新在前；支持 `platform` / `status` 过滤） |
 | GET | `/api/v1/history/{record_id}` | 单条历史详情（完整 Listing + 图片文件名） |
+| DELETE | `/api/v1/history/{record_id}` | 删除一条历史记录（目录 + 索引条目） |
 | GET | `/api/v1/history/{record_id}/images/{name}` | 读取历史中存储的压缩图片 |
 | GET | `/api/v1/diag` | 诊断：当前配置 + 模块加载时间（确认服务已加载新代码） |
 
@@ -272,8 +293,10 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 uv run pytest -q
 ```
 
-覆盖视觉解析、RAG loader/indexer/retriever、LangGraph 全链路（含合规回环）、
-FastAPI 端到端 multipart 请求，以及历史记录冷存储（落盘/裁剪/路径穿越防护/只读 API）。
+覆盖视觉解析、RAG loader/indexer/retriever（含分数阈值）、LangGraph 全链路
+（含合规回环与结构性校验）、FastAPI 端到端 multipart 请求、SSE 流式生成
+（事件序列与逐产品错误隔离）、历史记录冷存储（落盘/裁剪/删除/索引重建/过滤/
+路径穿越防护）、可选 API Key 鉴权，以及共享 OpenAI 客户端缓存。
 
 ---
 

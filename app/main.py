@@ -1,5 +1,6 @@
 """FastAPI application entry point."""
 
+import hmac
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,10 +9,10 @@ from pathlib import Path
 os.environ.setdefault("NO_PROXY", "*")
 os.environ.setdefault("no_proxy", "*")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app import __version__
 from app.api.history import router as history_router
@@ -95,6 +96,30 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router)
     app.include_router(history_router)
+
+    @app.middleware("http")
+    async def require_api_key(request: Request, call_next):
+        """Optional shared-secret gate for the API.
+
+        Enabled only when ``auth_api_key`` is set in the environment: every
+        ``/api/*`` call except the health probe must present the key in the
+        ``X-API-Key`` header. The static UI stays open so the page can render
+        and prompt for the key client-side.
+        """
+        expected = settings.auth_api_key
+        if expected:
+            path = request.url.path
+            if path.startswith("/api/") and path != "/api/v1/health":
+                provided = request.headers.get("X-API-Key", "")
+                if not hmac.compare_digest(provided, expected):
+                    return JSONResponse(
+                        {
+                            "error": "unauthorized",
+                            "detail": "Missing or invalid X-API-Key header.",
+                        },
+                        status_code=401,
+                    )
+        return await call_next(request)
 
     @app.get("/api/v1/health", tags=["system"])
     async def health() -> dict:

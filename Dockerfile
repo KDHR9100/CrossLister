@@ -18,4 +18,6 @@ USER appuser
 
 EXPOSE 8080
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# --no-sync: dependencies were baked in at build time; skipping the runtime
+# sync check keeps container startup fast and offline-safe.
+CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

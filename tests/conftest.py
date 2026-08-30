@@ -18,6 +18,8 @@ def force_mock_modes(tmp_path_factory):
     settings.vision_mode = VisionMode.MOCK
     settings.llm_mode = LLMMode.MOCK
     settings.embedding_mode = EmbeddingMode.MOCK
+    # The optional API-key gate must never depend on a local .env file.
+    settings.auth_api_key = ""
     # Keep test generations out of the real cold storage; history-specific
     # tests re-enable it against a throwaway directory.
     settings.history_enabled = False

@@ -57,6 +57,9 @@ class ListingMetadata(BaseModel):
     """Generation metadata returned to the caller."""
 
     model_used: str = ""
+    vision_model: str | None = Field(
+        default=None, description="Vision model used for image analysis"
+    )
     latency_ms: int = 0
     rag_chunks_used: int = 0
     total_tokens: int = 0
