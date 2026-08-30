@@ -6,21 +6,22 @@ import asyncio
 import json
 import re
 import time
+from collections.abc import AsyncIterator
 from datetime import datetime
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.agents.graph import generate_listing
+from app.agents.graph import generate_listing, stream_listing
 from app.api.batch_import import (
     ParseResult,
     generate_csv_template,
     parse_csv,
     parse_excel,
 )
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.history import store as history_store
 from app.models.listing import ListingResponse, Platform
 from app.rag.indexer import build_index
@@ -193,6 +194,55 @@ PLATFORM_INFO = {
 
 
 # --------------- Helpers ---------------
+
+def _parse_batch_request(
+    products: str,
+    images: list[UploadFile],
+    settings: Settings,
+) -> tuple[list[BatchProductMeta], list[list[UploadFile]]]:
+    """Parse and validate the shared batch request shape.
+
+    Both ``/listing/batch_generate`` and the SSE stream variant accept the
+    same multipart body: a ``products`` JSON array plus ordered ``images``
+    parts sliced per product by their declared ``image_count``.
+
+    Returns:
+        (product metadata list, per-product image file groups).
+
+    Raises:
+        HTTPException: 400 on malformed JSON, empty products, or image count
+            mismatch between metadata and uploads.
+    """
+    try:
+        raw_products = json.loads(products)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=400, detail=f"'products' is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(raw_products, list) or not raw_products:
+        raise HTTPException(status_code=400, detail="At least one product is required.")
+    try:
+        metas = [BatchProductMeta(**item) for item in raw_products]
+    except Exception as exc:  # noqa: BLE001 - pydantic ValidationError & co.
+        raise HTTPException(
+            status_code=400, detail=sanitize_error(f"Invalid product metadata: {exc}")
+        ) from exc
+
+    expected = sum(m.image_count for m in metas)
+    if expected != len(images):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Image count mismatch: metadata declares {expected} images "
+                f"but {len(images)} were uploaded."
+            ),
+        )
+    grouped: list[list[UploadFile]] = []
+    offset = 0
+    for m in metas:
+        grouped.append(images[offset : offset + m.image_count])
+        offset += m.image_count
+    return metas, grouped
 
 def _parse_extra_info(extra_info: str | None) -> dict | None:
     """Parse extra_info: try JSON first, fall back to natural language.
@@ -455,39 +505,7 @@ async def batch_generate(
     declared ``image_count``.
     """
     settings = get_settings()
-
-    # Parse product metadata JSON.
-    try:
-        raw_products = json.loads(products)
-    except (json.JSONDecodeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=400, detail=f"'products' is not valid JSON: {exc}"
-        ) from exc
-    if not isinstance(raw_products, list) or not raw_products:
-        raise HTTPException(status_code=400, detail="At least one product is required.")
-    try:
-        metas = [BatchProductMeta(**item) for item in raw_products]
-    except Exception as exc:  # noqa: BLE001 - pydantic ValidationError & co.
-        raise HTTPException(
-            status_code=400, detail=sanitize_error(f"Invalid product metadata: {exc}")
-        ) from exc
-
-    # Validate the declared image counts against the uploaded parts, then
-    # slice the ordered file list into one group per product.
-    expected = sum(m.image_count for m in metas)
-    if expected != len(images):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Image count mismatch: metadata declares {expected} images "
-                f"but {len(images)} were uploaded."
-            ),
-        )
-    grouped: list[list[UploadFile]] = []
-    offset = 0
-    for m in metas:
-        grouped.append(images[offset : offset + m.image_count])
-        offset += m.image_count
+    metas, grouped = _parse_batch_request(products, images, settings)
 
     # Bound concurrent generations so we don't flood the remote LLM endpoint
     # (which otherwise triggers rate limits / connection resets).
@@ -610,6 +628,191 @@ async def batch_generate(
         collected_images,
     )
     return BatchGenerateResponse(results=list(results))
+
+
+# --------------- Streaming batch generation (SSE) ---------------
+
+def _sse(payload: dict) -> str:
+    """Format one server-sent event frame."""
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.post(
+    "/listing/batch_generate_stream",
+    response_model=None,
+    tags=["listing"],
+)
+async def batch_generate_stream(
+    products: str = Form(
+        description="JSON array of product metadata; each item declares image_count"
+    ),
+    images: list[UploadFile] = File(
+        default=[],
+        description="All product images, appended in product order",
+    ),
+) -> StreamingResponse:
+    """Generate listings for multiple products, streaming progress via SSE.
+
+    Same request shape as ``/listing/batch_generate``. Emits ``data:`` frames
+    carrying JSON events:
+      - ``{"type": "product_start", "product_index": i}``
+      - ``{"type": "node", "product_index": i, "node": ..., "info": {...}}``
+        after each pipeline node of product i completes
+      - ``{"type": "product_done", "product_index": i, "listing": {...}}`` or
+        ``{"type": "product_done", "product_index": i, "error": "..."}``
+      - ``{"type": "done"}`` when every product has finished
+    """
+    settings = get_settings()
+    metas, grouped = _parse_batch_request(products, images, settings)
+
+    max_concurrency = max(1, settings.batch_max_concurrency)
+    semaphore = asyncio.Semaphore(max_concurrency)
+    queue: asyncio.Queue = asyncio.Queue()
+    collected_images: dict[int, list[bytes]] = {}
+
+    async def _produce(idx: int, item: BatchProductMeta, files: list[UploadFile]) -> None:
+        """Run one product in its own task, pushing events into the queue.
+
+        Every terminal path emits exactly one ``product_done`` event, and the
+        ``finally`` block pushes a sentinel so the consumer knows this
+        producer finished.
+        """
+        started = time.perf_counter()
+
+        def _done_payload(listing: dict | None = None, error: str | None = None) -> dict:
+            return {
+                "type": "product_done",
+                "product_index": idx,
+                "listing": listing,
+                "error": error,
+                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+            }
+
+        try:
+            async with semaphore:
+                try:
+                    plat = Platform(item.platform)
+                except ValueError:
+                    await queue.put(
+                        _done_payload(error=f"Unsupported platform: {item.platform}")
+                    )
+                    return
+
+                if not files:
+                    await queue.put(
+                        _done_payload(error="At least one image is required.")
+                    )
+                    return
+                if len(files) > settings.vision_max_images:
+                    await queue.put(
+                        _done_payload(
+                            error=f"At most {settings.vision_max_images} images are allowed."
+                        )
+                    )
+                    return
+
+                try:
+                    image_bytes = [await _read_and_validate(f) for f in files]
+                except Exception as exc:  # noqa: BLE001 - report per product
+                    await queue.put(_done_payload(error=sanitize_error(str(exc))))
+                    return
+                collected_images[idx] = image_bytes
+
+                await queue.put({"type": "product_start", "product_index": idx})
+
+                try:
+                    async with asyncio.timeout(settings.batch_product_timeout_s):
+                        async for event in stream_listing(
+                            images=image_bytes,
+                            category=item.category,
+                            platform=plat.value,
+                            target_lang=item.target_lang,
+                            extra_info=_parse_extra_info(item.extra_info),
+                            settings=settings,
+                        ):
+                            if event.get("type") == "product_done" and event.get(
+                                "listing"
+                            ) is not None:
+                                # JSON-ready dict for SSE frames and history.
+                                event["listing"] = event["listing"].model_dump(
+                                    mode="json"
+                                )
+                            event["product_index"] = idx
+                            await queue.put(event)
+                except TimeoutError:
+                    await queue.put(
+                        _done_payload(
+                            error=(
+                                f"生成超时（超过 {int(settings.batch_product_timeout_s)} 秒），"
+                                f"请重试或减少图片数量。"
+                            )
+                        )
+                    )
+        except Exception as exc:  # noqa: BLE001 - one product must not kill the stream
+            logger.error(
+                "api.batch_generate_stream.product_failed",
+                product_index=idx,
+                error=str(exc),
+            )
+            await queue.put(_done_payload(error=sanitize_error(str(exc))))
+        finally:
+            await queue.put(None)  # sentinel: producer finished
+
+    async def _event_stream() -> AsyncIterator[str]:
+        producers = [
+            asyncio.create_task(_produce(idx, item, files))
+            for idx, (item, files) in enumerate(zip(metas, grouped))
+        ]
+        history_payloads: list[dict] = []
+        finished = 0
+        try:
+            while finished < len(producers):
+                event = await queue.get()
+                if event is None:
+                    finished += 1
+                    continue
+                if event.get("type") == "product_done":
+                    idx = event["product_index"]
+                    history_payloads.append(
+                        {
+                            "product_index": idx,
+                            "category": metas[idx].category,
+                            "platform": metas[idx].platform,
+                            "target_lang": metas[idx].target_lang,
+                            "status": "success" if event.get("listing") else "failed",
+                            "listing": event.get("listing"),
+                            "error": event.get("error"),
+                            "elapsed_ms": event.get("elapsed_ms", 0),
+                        }
+                    )
+                yield _sse(event)
+            # History (cold storage): fire-and-forget after all products end.
+            history_payloads.sort(key=lambda p: p["product_index"])
+            _record_history(
+                "listing/batch_generate_stream",
+                history_payloads,
+                collected_images,
+            )
+            yield _sse({"type": "done"})
+        finally:
+            # Client disconnected: stop the remaining producer tasks.
+            for task in producers:
+                if not task.done():
+                    task.cancel()
+
+    logger.info(
+        "api.batch_generate_stream.request",
+        num_products=len(metas),
+        num_images=len(images),
+    )
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/import/template", tags=["import"])

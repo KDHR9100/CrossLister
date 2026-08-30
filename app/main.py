@@ -9,6 +9,7 @@ os.environ.setdefault("NO_PROXY", "*")
 os.environ.setdefault("no_proxy", "*")
 
 from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -37,8 +38,49 @@ def create_app() -> FastAPI:
             llm_mode=settings.llm_mode.value,
             embedding_mode=settings.embedding_mode.value,
         )
+        await _check_rag_index()
         yield
         logger.info("app.shutdown")
+
+    async def _check_rag_index() -> None:
+        """Warn when a platform-rule collection is missing/empty at startup.
+
+        Generation silently proceeds without rules when retrieval finds no
+        collection, so a forgotten ``build_index.py`` run would go unnoticed.
+        With ``rag_autobuild_on_startup`` enabled, the index is rebuilt in the
+        background instead of just warning.
+        """
+        from app.models.listing import Platform
+        from app.rag.indexer import build_index, collection_name, get_chroma_client
+
+        try:
+            client = get_chroma_client(settings)
+            missing = []
+            for platform in Platform:
+                name = collection_name(platform.value)
+                try:
+                    if client.get_collection(name=name).count() == 0:
+                        missing.append(name)
+                except Exception:  # noqa: BLE001 - collection absent
+                    missing.append(name)
+        except Exception as exc:  # noqa: BLE001 - never block startup
+            logger.warning("rag.startup_check_failed", error=str(exc))
+            return
+
+        if not missing:
+            return
+        logger.warning(
+            "rag.index_missing",
+            collections=missing,
+            hint="run scripts/build_index.py or POST /api/v1/rag/rebuild",
+        )
+        if settings.rag_autobuild_on_startup:
+            logger.info("rag.autobuild.start", collections=missing)
+            try:
+                stats = await run_in_threadpool(build_index, settings)
+                logger.info("rag.autobuild.done", total_chunks=stats.total_chunks)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("rag.autobuild.failed", error=str(exc))
 
     app = FastAPI(
         title=settings.app_name,

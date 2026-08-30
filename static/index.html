@@ -697,15 +697,10 @@ async function handleGenerate() {
   btn.querySelector('.btn-text').textContent = '生成中...';
 
   const rp = document.getElementById('resultsPanel');
-  rp.innerHTML = '<div class="empty-state"><div class="spinner" style="display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 1rem"></div><p>正在并发处理 ' + products.length + ' 个产品，请稍候...</p><p style="font-size:.78rem;color:var(--text-secondary);margin-top:.4rem">下方步骤为预计进度，实际耗时取决于图片数量与模型响应速度</p><p id="elapsedTimer" style="font-size:.85rem;color:var(--primary);margin-top:.6rem;font-weight:600">已等待 0 秒</p></div>';
+  rp.innerHTML = '<div class="empty-state"><div class="spinner" style="display:block;width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto 1rem"></div><p>正在并发处理 ' + products.length + ' 个产品，请稍候...</p><p id="streamStatus" style="font-size:.85rem;color:var(--text-secondary);margin-top:.6rem">等待服务端事件…</p><p id="elapsedTimer" style="font-size:.85rem;color:var(--primary);margin-top:.6rem;font-weight:600">已等待 0 秒</p></div>';
 
-  // Indeterminate progress hint: advance only up to step 4 while waiting,
-  // so the UI never falsely shows "complete". Step 5 lights up on real response.
-  let pt = setInterval(() => {
-    const a = document.querySelectorAll('.pipeline-step.active');
-    const n = a.length + 1;
-    if (n < 5) setPipelineStep(n);
-  }, 2000);
+  // Reset pipeline steps; they now light up from REAL server events.
+  setPipelineStep(0);
 
   // Live elapsed-time counter so the user knows the request is still running.
   const genStart = Date.now();
@@ -743,28 +738,89 @@ async function handleGenerate() {
     }
     fd.append('products', JSON.stringify(meta));
 
-    const resp = await fetch('/api/v1/listing/batch_generate', {
+    // Streaming endpoint: the server pushes one SSE frame per pipeline node
+    // per product, so the UI shows real progress and results render as soon
+    // as each product finishes (no more fake step animation).
+    const resp = await fetch('/api/v1/listing/batch_generate_stream', {
       method: 'POST',
       body: fd,
       signal: controller.signal
     });
-
-    clearInterval(pt);
-    clearInterval(timer);
-    clearTimeout(fetchTimeout);
-    setPipelineStep(5);
 
     if (!resp.ok) {
       const t = await resp.text();
       throw new Error(t || ('HTTP ' + resp.status));
     }
 
-    const data = await resp.json();
-    allResults = data.results;
+    allResults = products.map(() => null); // null = still generating
     activeResultTab = 0;
+
+    const statusEl = document.getElementById('streamStatus');
+    const nodeSteps = { vision: 1, rag: 2, generate: 3, guardrails: 4, translate: 5 };
+    let lastStep = 0;
+
+    const applyEvent = (ev) => {
+      if (ev.type === 'product_start') {
+        statusEl.textContent = '产品 ' + (ev.product_index + 1) + '：开始生成';
+      } else if (ev.type === 'node') {
+        const step = nodeSteps[ev.node] || 0;
+        if (step > lastStep) { lastStep = step; setPipelineStep(step); }
+        const info = ev.info || {};
+        let detail = '';
+        if (ev.node === 'vision') detail = '视觉识别类目「' + (info.detected_category || '') + '」，提取 ' + (info.selling_points || 0) + ' 个卖点';
+        else if (ev.node === 'rag') detail = '检索到 ' + (info.rules || 0) + ' 条平台规则';
+        else if (ev.node === 'generate') detail = '生成标题「' + (info.title || '') + '」';
+        else if (ev.node === 'guardrails') detail = info.passed
+          ? '合规审核通过（第 ' + (info.attempts || 1) + ' 次）'
+          : '第 ' + (info.attempts || 1) + ' 次审核未通过（' + (info.violations || 0) + ' 项违规），重写中…';
+        else if (ev.node === 'translate') detail = '生成中文翻译';
+        statusEl.textContent = '产品 ' + (ev.product_index + 1) + '：' + detail;
+      } else if (ev.type === 'product_done') {
+        allResults[ev.product_index] = {
+          product_index: ev.product_index,
+          listing: ev.listing,
+          error: ev.error,
+          elapsed_ms: ev.elapsed_ms || 0
+        };
+        activeResultTab = ev.product_index;
+        renderBatchResults(allResults);
+      } else if (ev.type === 'done') {
+        setPipelineStep(5);
+        statusEl.textContent = '全部产品处理完成';
+      }
+    };
+
+    // Read the SSE body manually (POST cannot use EventSource).
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let sawDone = false;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.split('\n').find(l => l.startsWith('data: '));
+        if (!line) continue;
+        try {
+          const ev = JSON.parse(line.slice(6));
+          if (ev.type === 'done') sawDone = true;
+          applyEvent(ev);
+        } catch (e) { /* skip malformed frame */ }
+      }
+    }
+
+    clearInterval(timer);
+    clearTimeout(fetchTimeout);
+    if (!sawDone) setPipelineStep(5);
+    // Drop pending placeholders for products that never reported a result.
+    allResults = allResults.map(r => r === null
+      ? { product_index: -1, listing: null, error: '未收到结果（连接中断）', elapsed_ms: 0 }
+      : r);
     renderBatchResults(allResults);
   } catch (err) {
-    clearInterval(pt);
     clearInterval(timer);
     clearTimeout(fetchTimeout);
     const msg = err.name === 'AbortError'
@@ -791,14 +847,16 @@ function renderBatchResults(results) {
 
   let tabsHtml = '<div class="result-tabs">';
   results.forEach((r, i) => {
-    const label = r.error ? `产品 ${i + 1} (失败)` : `产品 ${i + 1}`;
+    const label = r === null ? `产品 ${i + 1} (生成中…)` : (r.error ? `产品 ${i + 1} (失败)` : `产品 ${i + 1}`);
     tabsHtml += `<div class="result-tab${i === activeResultTab ? ' active' : ''}" onclick="switchResultTab(${i})">${label}</div>`;
   });
   tabsHtml += '</div>';
 
   let contentHtml = '';
   const active = results[activeResultTab];
-  if (!active) {
+  if (active === null) {
+    contentHtml = '<div class="empty-state"><div class="spinner" style="display:block;width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto .8rem"></div><p>该产品生成中，请稍候…</p></div>';
+  } else if (!active) {
     contentHtml = '<div class="empty-state"><p>无数据</p></div>';
   } else if (active.error) {
     contentHtml = `<div class="error-msg"><strong>产品 ${activeResultTab + 1} 生成失败：</strong>${escapeHtml(active.error)}</div>`;
@@ -815,7 +873,9 @@ function renderBatchSummary(results) {
   let totalElapsed = 0;
   let okCount = 0;
   let failCount = 0;
+  let pendingCount = 0;
   results.forEach(r => {
+    if (r === null) { pendingCount++; return; }
     if (r.listing) {
       okCount++;
       totalTokens += (r.listing.metadata && r.listing.metadata.total_tokens) || 0;
@@ -828,6 +888,7 @@ function renderBatchSummary(results) {
   let h = '<div class="batch-summary">';
   h += '<div class="summary-item">产品：<span>' + results.length + ' 个</span></div>';
   h += '<div class="summary-item">成功：<span class="ok">' + okCount + '</span></div>';
+  if (pendingCount > 0) h += '<div class="summary-item">生成中：<span>' + pendingCount + '</span></div>';
   if (failCount > 0) h += '<div class="summary-item">失败：<span class="fail">' + failCount + '</span></div>';
   if (totalTokens > 0) h += '<div class="summary-item">Token 总消耗：<span>' + totalTokens.toLocaleString() + '</span></div>';
   if (totalElapsed > 0) h += '<div class="summary-item">累计耗时：<span>' + formatDuration(totalElapsed) + '</span></div>';
@@ -1228,7 +1289,7 @@ async function loadHistoryList() {
     records.forEach(r => {
       html += `<tr>
         <td style="white-space:nowrap">${escapeHtml(formatHistTime(r.created_at))}</td>
-        <td>${escapeHtml(r.api === 'listing/batch_generate' ? '批量生成' : '单产品生成')}</td>
+        <td>${escapeHtml(r.api && r.api.includes('batch_generate') ? '批量生成' : '单产品生成')}</td>
         <td>${r.product_count}</td>
         <td>${r.success_count}/${r.product_count}</td>
         <td>${escapeHtml((r.platforms || []).join(', '))}</td>
@@ -1267,7 +1328,7 @@ function renderHistoryDetail(rec) {
   let h = '<div class="metadata-bar" style="margin-bottom:1rem">';
   h += '<div class="meta-item">记录 ID：<span>' + escapeHtml(rec.record_id) + '</span></div>';
   h += '<div class="meta-item">生成时间：<span>' + escapeHtml(formatHistTime(rec.created_at)) + '</span></div>';
-  h += '<div class="meta-item">方式：<span>' + escapeHtml(rec.api === 'listing/batch_generate' ? '批量生成' : '单产品生成') + '</span></div>';
+  h += '<div class="meta-item">方式：<span>' + escapeHtml(rec.api && rec.api.includes('batch_generate') ? '批量生成' : '单产品生成') + '</span></div>';
   h += '</div>';
 
   (rec.products || []).forEach(p => {

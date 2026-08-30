@@ -395,3 +395,103 @@ def test_read_and_validate_accepts_normal_image() -> None:
 
     data = asyncio.run(_read_and_validate(_OkFile()))  # type: ignore[arg-type]
     assert data == _PNG_1X1
+
+
+# --------------- SSE streaming batch generation ---------------
+
+
+def test_batch_generate_stream_emits_full_event_sequence() -> None:
+    products = json.dumps(
+        [
+            {
+                "product_index": 0,
+                "category": "storage organizer",
+                "platform": "amazon",
+                "target_lang": "en",
+                "image_count": 1,
+            },
+            {
+                "product_index": 1,
+                "category": "electronics",
+                "platform": "shopee",
+                "target_lang": "zh",
+                "image_count": 1,
+            },
+        ]
+    )
+    files = [
+        ("images", ("a.png", _PNG_1X1, "image/png")),
+        ("images", ("b.png", _PNG_1X1, "image/png")),
+    ]
+    events = []
+    with client.stream(
+        "POST",
+        "/api/v1/listing/batch_generate_stream",
+        data={"products": products},
+        files=files,
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        for line in resp.iter_lines():
+            if line.startswith("data: "):
+                events.append(json.loads(line[len("data: ") :]))
+
+    types = [e["type"] for e in events]
+    # Every product starts, streams node progress, and terminates exactly once.
+    assert types.count("product_start") == 2
+    assert types.count("product_done") == 2
+    assert types[-1] == "done"
+    # All five pipeline nodes reported progress.
+    nodes = {e["node"] for e in events if e["type"] == "node"}
+    assert {"vision", "rag", "generate", "guardrails", "translate"} <= nodes
+    # Both products succeeded with a full listing payload.
+    dones = [e for e in events if e["type"] == "product_done"]
+    assert all(e["listing"] and e["listing"]["title"] for e in dones)
+    assert {e["product_index"] for e in dones} == {0, 1}
+
+
+def test_batch_generate_stream_reports_per_product_errors() -> None:
+    products = json.dumps(
+        [
+            {
+                "product_index": 0,
+                "category": "x",
+                "platform": "not-a-platform",
+                "target_lang": "en",
+                "image_count": 1,
+            },
+            {
+                "product_index": 1,
+                "category": "electronics",
+                "platform": "shopee",
+                "target_lang": "zh",
+                "image_count": 1,
+            },
+        ]
+    )
+    files = [("images", ("a.png", _PNG_1X1, "image/png"))] * 2
+    events = []
+    with client.stream(
+        "POST",
+        "/api/v1/listing/batch_generate_stream",
+        data={"products": products},
+        files=files,
+    ) as resp:
+        assert resp.status_code == 200
+        for line in resp.iter_lines():
+            if line.startswith("data: "):
+                events.append(json.loads(line[len("data: ") :]))
+
+    dones = {e["product_index"]: e for e in events if e["type"] == "product_done"}
+    assert set(dones) == {0, 1}
+    assert dones[0]["error"] and "Unsupported platform" in dones[0]["error"]
+    assert dones[1]["listing"]
+    assert events[-1]["type"] == "done"
+
+
+def test_batch_generate_stream_rejects_bad_metadata_before_streaming() -> None:
+    resp = client.post(
+        "/api/v1/listing/batch_generate_stream",
+        data={"products": "not json"},
+    )
+    assert resp.status_code == 400

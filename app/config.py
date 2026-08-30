@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     embedding_api_base: str = "http://localhost:8000/v1"
     embedding_api_key: str = "EMPTY"
     rag_top_k: int = 4
+    # When true, a missing/empty platform-rule collection detected at startup
+    # is rebuilt automatically in the background (embedding model permitting).
+    rag_autobuild_on_startup: bool = False
 
     # -- Compliance guardrails ------------------------------------------
     max_compliance_retries: int = 3

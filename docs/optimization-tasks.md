@@ -33,13 +33,13 @@
 
 ## P3 体验
 
-- [ ] **T8 SSE 真进度**
+- [x] **T8 SSE 真进度**
   后端：`graph.py` 基于 `astream(stream_mode="updates")` 的流式入口；
   `routes.py` 新增 `POST /api/v1/listing/batch_generate_stream`（product_start / node /
   product_done / done 事件，复用并发限流与单品超时），原端点保留兼容。
   前端：`handleGenerate` 改 fetch 流式读取，替换假流水线动画，结果逐个渲染。
 - [ ] **T9 大批量任务化**：暂缓。T8 落地后已有真进度与错误隔离，job 队列复杂度暂不值。
-- [ ] **T10 启动索引检查**（`app/main.py` lifespan）
+- [x] **T10 启动索引检查**（`app/main.py` lifespan）
   逐平台检查 chroma collection 存在且非空，缺失记 warning；
   新增 `rag_autobuild_on_startup`（默认 false），为 true 时后台自动重建。
 
@@ -64,3 +64,4 @@
 | --- | --- | --- | --- |
 | 2026-08-30 | P1 健壮性修复 | (见 git log) | 新增 app/utils/openai_client.py 共享客户端工厂；测试数 72→86 |
 | 2026-08-30 | P2 合规强化 | (见 git log) | structural_validator 落地；违规/警告分级防误报空转；测试数 86→109 |
+| 2026-08-30 | P3 体验 | (见 git log) | SSE 端点 batch_generate_stream；前端真进度+占位渲染；启动索引检查；测试数 109→112 |

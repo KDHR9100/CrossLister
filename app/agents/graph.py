@@ -11,6 +11,7 @@ reported in the response so callers can decide what to do.
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -113,6 +114,37 @@ async def generate_listing(
     Returns:
         The final ListingResponse including compliance report and metadata.
     """
+    async for event in stream_listing(
+        images=images,
+        category=category,
+        platform=platform,
+        target_lang=target_lang,
+        extra_info=extra_info,
+        settings=settings,
+    ):
+        if event["type"] == "product_done":
+            return event["listing"]
+    raise RuntimeError("pipeline produced no result")  # pragma: no cover
+
+
+async def stream_listing(
+    images: list[bytes],
+    category: str,
+    platform: str,
+    target_lang: str = "en",
+    extra_info: dict[str, Any] | None = None,
+    settings: Settings | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    """Run the pipeline, yielding progress events and the final listing.
+
+    Events (dicts, JSON-serializable):
+      - ``{"type": "node", "node": <name>, "info": {...}}``
+        once per completed graph node; ``info`` is a compact JSON-safe summary.
+      - ``{"type": "product_done", "listing": <ListingResponse>}`` as the
+        final event on success (the raw model; JSON serialization is the
+        caller's job). Errors propagate as exceptions so callers can attach
+        their own terminal event.
+    """
     s = settings or get_settings()
     graph = get_graph()
 
@@ -128,10 +160,21 @@ async def generate_listing(
     reset_usage()
 
     started = time.perf_counter()
-    result: AgentState = await graph.ainvoke(initial_state)
+    result: AgentState = {}
+
+    async for chunk in graph.astream(initial_state, stream_mode="updates"):
+        for node_name, delta in chunk.items():
+            if not isinstance(delta, dict):
+                continue
+            result.update(delta)
+            yield {
+                "type": "node",
+                "node": node_name,
+                "info": _summarize_node(node_name, delta),
+            }
+
     latency_ms = int((time.perf_counter() - started) * 1000)
     total_tokens = get_total_tokens()
-
     logger.info(
         "graph.completed",
         platform=platform,
@@ -139,7 +182,31 @@ async def generate_listing(
         attempts=result.get("attempts", 0),
         total_tokens=total_tokens,
     )
-    return _to_response(result, latency_ms, s, total_tokens)
+    response = _to_response(result, latency_ms, s, total_tokens)
+    yield {"type": "product_done", "listing": response}
+
+
+def _summarize_node(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
+    """Compact progress info for a node event (safe for SSE payloads)."""
+    if node_name == "vision" and "visual_analysis" in delta:
+        analysis = delta["visual_analysis"]
+        return {
+            "detected_category": analysis.detected_category,
+            "selling_points": len(analysis.selling_points),
+        }
+    if node_name == "rag":
+        return {"rules": len(delta.get("retrieved_rules", []))}
+    if node_name == "generate":
+        listing = delta.get("listing") or {}
+        return {"title": str(listing.get("title", ""))[:80]}
+    if node_name == "guardrails" and "compliance" in delta:
+        compliance = delta["compliance"]
+        return {
+            "passed": compliance.passed,
+            "attempts": compliance.attempts,
+            "violations": len(compliance.violations),
+        }
+    return {}
 
 
 def _to_response(
