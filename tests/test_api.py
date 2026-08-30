@@ -6,6 +6,8 @@ Chroma index built from the bundled rule documents.
 
 from __future__ import annotations
 
+import asyncio
+
 import json
 
 import pytest
@@ -346,3 +348,50 @@ def test_import_parse_text_file_treated_as_csv_reports_missing_columns() -> None
     body = resp.json()
     assert body["total_rows"] == 0
     assert body["file_errors"]
+
+
+# --------------- Upload size gate (reject before reading) ---------------
+
+
+def test_read_and_validate_rejects_oversize_before_reading() -> None:
+    """A declared oversize upload is rejected without pulling the body in."""
+    from app.api.routes import MAX_IMAGE_BYTES, _read_and_validate
+
+    class _OversizeFile:
+        filename = "huge.png"
+        size = MAX_IMAGE_BYTES + 1
+
+        async def read(self) -> bytes:  # pragma: no cover - must not be reached
+            raise AssertionError("oversize upload must be rejected before read()")
+
+    with pytest.raises(ValueError, match="exceeds"):
+        asyncio.run(_read_and_validate(_OversizeFile()))  # type: ignore[arg-type]
+
+
+def test_read_and_validate_still_rejects_oversize_body_when_size_unknown() -> None:
+    """Fallback for transports that do not report a size: post-read check."""
+    from app.api.routes import MAX_IMAGE_BYTES, _read_and_validate
+
+    class _UnknownSizeFile:
+        filename = "huge.png"
+        size = None
+
+        async def read(self) -> bytes:
+            return b"\x89PNG\r\n\x1a\n" + b"0" * (MAX_IMAGE_BYTES + 1)
+
+    with pytest.raises(ValueError, match="exceeds"):
+        asyncio.run(_read_and_validate(_UnknownSizeFile()))  # type: ignore[arg-type]
+
+
+def test_read_and_validate_accepts_normal_image() -> None:
+    from app.api.routes import _read_and_validate
+
+    class _OkFile:
+        filename = "ok.png"
+        size = len(_PNG_1X1)
+
+        async def read(self) -> bytes:
+            return _PNG_1X1
+
+    data = asyncio.run(_read_and_validate(_OkFile()))  # type: ignore[arg-type]
+    assert data == _PNG_1X1

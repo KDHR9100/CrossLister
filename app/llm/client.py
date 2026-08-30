@@ -14,6 +14,7 @@ import time
 
 from app.config import LLMMode, Settings, get_settings
 from app.utils.logger import get_logger
+from app.utils.openai_client import get_openai_client
 from app.utils.retry import is_retryable
 from app.utils.usage import add_usage
 
@@ -34,25 +35,19 @@ class LLMClient:
         self._client = None
 
     def _get_client(self):
-        """Return a cached AsyncOpenAI client, building it on first use."""
+        """Return the process-wide cached AsyncOpenAI client for this endpoint.
+
+        The actual cache lives in :mod:`app.utils.openai_client` and is keyed
+        by endpoint settings, so every LLMClient instance (one is created per
+        pipeline-node call) reuses the same connection pool instead of paying
+        a fresh TCP/TLS handshake per request.
+        """
         if self._client is None:
-            import openai._base_client as _bc
-            from openai import AsyncOpenAI
-
-            # The SDK's own httpx module (may be the renamed httpx2 build);
-            # reusing it guarantees http_client type compatibility.
-            _httpx = getattr(_bc, "httpx", None) or getattr(_bc, "httpx2")
-
             s = self._settings
-            # trust_env=False: never inherit http_proxy/https_proxy from the
-            # environment. Local clash-style proxies drop large/slow model
-            # requests (connection reset mid-response); the MaaS endpoint is
-            # directly reachable, so model calls always connect direct.
-            self._client = AsyncOpenAI(
+            self._client = get_openai_client(
                 base_url=s.llm_api_base,
-                api_key=s.llm_api_key or "EMPTY",
-                timeout=s.llm_timeout_s,
-                http_client=_httpx.AsyncClient(trust_env=False),
+                api_key=s.llm_api_key,
+                timeout_s=s.llm_timeout_s,
             )
         return self._client
 

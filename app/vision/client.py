@@ -20,6 +20,7 @@ from app.config import Settings, VisionMode, get_settings
 from app.models.listing import VisualAnalysis
 from app.utils.images import preprocess_image
 from app.utils.logger import get_logger
+from app.utils.openai_client import get_openai_client
 from app.utils.retry import is_retryable
 from app.utils.usage import add_usage
 from app.vision.prompts import build_vision_messages, parse_vision_json
@@ -61,24 +62,19 @@ class VisionClient:
         self._client = None
 
     def _get_client(self):
-        """Return a cached AsyncOpenAI client, building it on first use."""
+        """Return the process-wide cached AsyncOpenAI client for this endpoint.
+
+        The actual cache lives in :mod:`app.utils.openai_client` and is keyed
+        by endpoint settings, so every VisionClient instance (one is created
+        per vision-node call) reuses the same connection pool instead of paying
+        a fresh TCP/TLS handshake per request.
+        """
         if self._client is None:
-            import openai._base_client as _bc
-            from openai import AsyncOpenAI
-
-            # The SDK's own httpx module (may be the renamed httpx2 build);
-            # reusing it guarantees http_client type compatibility.
-            _httpx = getattr(_bc, "httpx", None) or getattr(_bc, "httpx2")
-
             s = self._settings
-            # trust_env=False: bypass any http_proxy/https_proxy inherited from
-            # the environment. Vision payloads are large; local proxies drop
-            # such connections mid-response. The endpoint is directly reachable.
-            self._client = AsyncOpenAI(
+            self._client = get_openai_client(
                 base_url=s.vision_api_base,
-                api_key=s.vision_api_key or "EMPTY",
-                timeout=s.vision_timeout_s,
-                http_client=_httpx.AsyncClient(trust_env=False),
+                api_key=s.vision_api_key,
+                timeout_s=s.vision_timeout_s,
             )
         return self._client
 
@@ -138,10 +134,15 @@ class VisionClient:
 
         # Downscale/compress each image so the base64 payload stays under the
         # remote gateway's request-body limit (avoids 413 / dropped uploads).
-        images = [
-            preprocess_image(img, s.vision_max_image_side, s.vision_jpeg_quality)
-            for img in images
-        ]
+        # PIL resizing is CPU-bound, so the batch runs in a worker thread —
+        # 20 large photos on the event loop would stall every other request.
+        def _preprocess_all() -> list[bytes]:
+            return [
+                preprocess_image(img, s.vision_max_image_side, s.vision_jpeg_quality)
+                for img in images
+            ]
+
+        images = await asyncio.to_thread(_preprocess_all)
         images_b64 = [encode_image(img) for img in images]
         mimes = [guess_mime(img) for img in images]
         messages = build_vision_messages(images_b64, category_hint, extra_info, mimes)

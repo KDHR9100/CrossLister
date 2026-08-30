@@ -57,6 +57,7 @@ async def compliance_node(state: AgentState) -> dict:
     )
     violations.extend(llm_result.get("violations", []))
     suggestions = list(llm_result.get("suggestions", []))
+    warnings = list(llm_result.get("warnings", []))
 
     passed = not violations
     if not passed:
@@ -67,7 +68,7 @@ async def compliance_node(state: AgentState) -> dict:
 
     result = ComplianceResult(
         passed=passed,
-        warnings=[],
+        warnings=warnings,
         violations=violations,
         suggestions=suggestions,
         attempts=attempts,

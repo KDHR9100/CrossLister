@@ -83,16 +83,36 @@ async def check_listing(
         bullets="\n".join(f"- {b}" for b in bullet_points) or "(none)",
         description=description,
     )
-    raw = await client.chat(_SYSTEM_PROMPT, user_prompt, temperature=0.0)
-    return _parse_checker_json(raw)
+
+    # One retry on unparseable output: the checker's verdict gates the
+    # regeneration loop, so a noisy reply is worth a second ask before we
+    # give up and skip semantic review entirely.
+    parsed: dict[str, Any] | None = None
+    for attempt in range(2):
+        raw = await client.chat(_SYSTEM_PROMPT, user_prompt, temperature=0.0)
+        parsed = _parse_checker_json(raw)
+        if parsed is not None:
+            return parsed
+
+    # Still unparseable: fail open (do not block the listing) but surface the
+    # skipped review as a warning so the report never hides it.
+    logger.warning("guardrails.llm_checker.skipped_after_retry", platform=platform)
+    return {
+        "passed": True,
+        "violations": [],
+        "suggestions": [],
+        "warnings": [
+            "合规复核的 LLM 语义检查结果无法解析，本次已跳过语义复核（仅完成了关键词扫描）。"
+        ],
+    }
 
 
-def _parse_checker_json(raw: str) -> dict[str, Any]:
-    """Parse the checker reply, tolerating fenced or noisy JSON output."""
+def _parse_checker_json(raw: str) -> dict[str, Any] | None:
+    """Parse the checker reply; return None when unparseable."""
     data = extract_json_object(raw)
     if data is None:
         logger.warning("guardrails.llm_checker.parse_failed")
-        return {"passed": True, "violations": [], "suggestions": []}
+        return None
     return {
         "passed": bool(data.get("passed", True)),
         "violations": [str(v) for v in data.get("violations", [])],

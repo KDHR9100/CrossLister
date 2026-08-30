@@ -218,12 +218,31 @@ def _parse_extra_info(extra_info: str | None) -> dict | None:
         return {"natural_language_description": text}
 
 
+def _declared_size(f: UploadFile) -> int | None:
+    """Return the upload's declared byte size, or None when unknown.
+
+    Starlette's multipart parser tracks the byte count per part, so the size
+    is available *before* the body is read — letting us reject oversized
+    uploads without ever pulling them into memory.
+    """
+    return getattr(f, "size", None)
+
+
 async def _read_and_validate(f: UploadFile) -> bytes:
     """Read one uploaded image and validate size and format.
 
     Raises:
         ValueError: When the file is empty, oversized, or not an image.
     """
+    # Reject oversize uploads before reading: when the declared size is known
+    # we never pull the body into memory at all. The post-read check below is
+    # the fallback for transports that do not report a size.
+    declared = _declared_size(f)
+    if declared is not None and declared > MAX_IMAGE_BYTES:
+        raise ValueError(
+            f"Image '{f.filename}' exceeds the "
+            f"{MAX_IMAGE_BYTES // (1024 * 1024)} MB limit."
+        )
     data = await f.read()
     if not data:
         raise ValueError(f"Image '{f.filename}' is empty.")
@@ -618,6 +637,15 @@ async def parse_import_file(
     content_type = file.content_type or ""
 
     logger.info("api.import.parse.request", filename=filename, content_type=content_type)
+
+    # Reject oversize imports before reading the body into memory (falls back
+    # to the post-read checks below when the size is not declared).
+    declared = _declared_size(file)
+    if declared is not None and declared > MAX_IMPORT_FILE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"文件超过 {MAX_IMPORT_FILE_BYTES // (1024 * 1024)} MB 限制",
+        )
 
     # Determine file type and parse
     if filename.endswith(".xlsx") or filename.endswith(".xls") or "spreadsheet" in content_type:
