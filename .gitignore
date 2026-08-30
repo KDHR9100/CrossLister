@@ -33,6 +33,7 @@ logs/
 .idea/
 .vscode/
 .trae/
+.zcode/
 
 # OS
 .DS_Store
