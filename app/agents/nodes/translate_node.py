@@ -89,7 +89,9 @@ async def translate_node(state: AgentState) -> dict:
         bullets="\n".join(f"- {b}" for b in final_listing["bullet_points"]),
         description=final_listing["description"],
     )
-    raw = await client.chat(_SYSTEM_PROMPT, user_prompt, temperature=0.1)
+    raw = await client.chat(
+        _SYSTEM_PROMPT, user_prompt, temperature=0.1, response_format={"type": "json_object"}
+    )
     translated = _parse_translation_json(raw)
 
     if translated:

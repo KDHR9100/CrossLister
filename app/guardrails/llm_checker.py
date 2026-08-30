@@ -89,7 +89,9 @@ async def check_listing(
     # give up and skip semantic review entirely.
     parsed: dict[str, Any] | None = None
     for attempt in range(2):
-        raw = await client.chat(_SYSTEM_PROMPT, user_prompt, temperature=0.0)
+        raw = await client.chat(
+            _SYSTEM_PROMPT, user_prompt, temperature=0.0, response_format={"type": "json_object"}
+        )
         parsed = _parse_checker_json(raw)
         if parsed is not None:
             return parsed

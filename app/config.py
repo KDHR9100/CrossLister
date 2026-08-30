@@ -86,6 +86,8 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 120.0
     # Transient-error retries for LLM calls (connection drops, rate limits, 5xx).
     llm_max_retries: int = 3
+    # Upper bound on generated tokens per LLM call (0 disables the cap).
+    llm_max_output_tokens: int = 2048
 
     # -- Batch generation ------------------------------------------------
     # Cap on how many products are generated concurrently. Keeps pressure off

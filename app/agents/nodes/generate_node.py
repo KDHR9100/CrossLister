@@ -165,7 +165,9 @@ async def _llm_generate(state: AgentState) -> GeneratedListing:
         rules=_format_rules(state),
         feedback=_format_feedback(state.get("compliance")),
     )
-    raw = await client.chat(_SYSTEM_PROMPT, user_prompt, temperature=0.4)
+    raw = await client.chat(
+        _SYSTEM_PROMPT, user_prompt, temperature=0.4, response_format={"type": "json_object"}
+    )
     return _parse_listing_json(raw)
 
 

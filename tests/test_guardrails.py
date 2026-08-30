@@ -20,7 +20,9 @@ class _FakeLLMClient:
         self._replies = list(replies)
         self.calls = 0
 
-    async def chat(self, system: str, user: str, temperature: float = 0.0) -> str:
+    async def chat(
+        self, system: str, user: str, temperature: float = 0.0, response_format=None
+    ) -> str:
         self.calls += 1
         return self._replies.pop(0)
 

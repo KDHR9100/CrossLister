@@ -9,7 +9,7 @@ to loop back to generation or continue to translation.
 from __future__ import annotations
 
 from app.agents.state import AgentState
-from app.guardrails import keyword_filter, llm_checker
+from app.guardrails import keyword_filter, llm_checker, structural_validator
 from app.models.compliance import ComplianceResult
 from app.utils.logger import get_logger
 
@@ -34,7 +34,7 @@ async def compliance_node(state: AgentState) -> dict:
     description = str(listing.get("description", ""))
     keywords = [str(k) for k in listing.get("backend_keywords", [])]
 
-    # 1) Fast deterministic keyword scan.
+    # 1) Fast deterministic checks.
     violations = keyword_filter.scan_listing(
         platform=platform,
         title=title,
@@ -42,6 +42,18 @@ async def compliance_node(state: AgentState) -> dict:
         description=description,
         backend_keywords=keywords,
     )
+
+    # 1b) Deterministic structural limits (lengths/counts/URLs/prices...).
+    # Warnings are report-only; violations join the rewrite loop below.
+    structural_violations, structural_warnings = structural_validator.scan_structure(
+        platform=platform,
+        title=title,
+        bullet_points=bullets,
+        description=description,
+        backend_keywords=keywords,
+    )
+    violations.extend(structural_violations)
+    warnings = list(structural_warnings)
 
     # 2) Semantic LLM review against the retrieved rules.
     rules_payload = [
@@ -57,7 +69,7 @@ async def compliance_node(state: AgentState) -> dict:
     )
     violations.extend(llm_result.get("violations", []))
     suggestions = list(llm_result.get("suggestions", []))
-    warnings = list(llm_result.get("warnings", []))
+    warnings.extend(llm_result.get("warnings", []))
 
     passed = not violations
     if not passed:

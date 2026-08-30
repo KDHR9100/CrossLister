@@ -68,6 +68,7 @@ class LLMClient:
         system: str,
         user: str,
         temperature: float = 0.2,
+        response_format: dict | None = None,
     ) -> str:
         """Send a single-turn chat request and return the assistant text.
 
@@ -75,6 +76,9 @@ class LLMClient:
             system: System prompt constraining the model behaviour.
             user: User prompt carrying the concrete task payload.
             temperature: Sampling temperature.
+            response_format: Optional OpenAI response_format (e.g.
+                ``{"type": "json_object"}``) to force structured output;
+                callers keep a tolerant parser as fallback.
 
         Returns:
             The assistant message content as a string.
@@ -94,19 +98,28 @@ class LLMClient:
         client = self._get_client()
         max_retries = max(0, s.llm_max_retries)
 
+        request_kwargs: dict = {
+            "model": s.llm_model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": temperature,
+        }
+        if response_format is not None:
+            request_kwargs["response_format"] = response_format
+        # Upper bound on generated tokens so a runaway completion cannot burn
+        # unbounded quota; 0 disables the cap.
+        max_output_tokens = int(getattr(s, "llm_max_output_tokens", 0) or 0)
+        if max_output_tokens > 0:
+            request_kwargs["max_tokens"] = max_output_tokens
+
         last_exc: Exception | None = None
         for attempt in range(max_retries + 1):
             started = time.perf_counter()
             logger.info("llm.request", model=s.llm_model, attempt=attempt + 1)
             try:
-                response = await client.chat.completions.create(
-                    model=s.llm_model,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    temperature=temperature,
-                )
+                response = await client.chat.completions.create(**request_kwargs)
                 latency_ms = int((time.perf_counter() - started) * 1000)
                 logger.info("llm.response", latency_ms=latency_ms)
                 add_usage(getattr(response, "usage", None))

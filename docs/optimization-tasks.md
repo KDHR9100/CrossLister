@@ -19,16 +19,16 @@
 
 ## P2 合规校验强化（核心价值）
 
-- [ ] **T5 结构性合规校验器**（新建 `app/guardrails/structural_validator.py`）
+- [x] **T5 结构性合规校验器**（新建 `app/guardrails/structural_validator.py`）
   违规级（触发重写回环）：标题长度（amazon≤200 / shopee≤120 / temu 20–120）、
   amazon bullet ≤5 条且每条 ≤500 字符、amazon 描述 ≤2000 字符、amazon 关键词 ≤249 字节、
   shopee/temu 标题 emoji、全平台 URL/外链、temu 价格字样。
   警告级（不触发重写）：ALL-CAPS 词（含 acronym 白名单）、amazon 标题 `!*$?`、
   amazon bullet >250 字符建议。违规消息带 rule_id 前缀，经现有 feedback 机制回给生成节点。
-- [ ] **T6 LLM JSON 结构化输出**（`app/llm/client.py`）
+- [x] **T6 LLM JSON 结构化输出**（`app/llm/client.py`）
   `chat()` 增加 `response_format` 参数，generate/checker/translate 启用 `json_object`，
   保留 `extract_json_object` 容错回退。
-- [ ] **T7 max_tokens 上限**（`app/config.py`、`app/llm/client.py`）
+- [x] **T7 max_tokens 上限**（`app/config.py`、`app/llm/client.py`）
   新增 `llm_max_output_tokens`（默认 2048），`chat()` 传入。
 
 ## P3 体验
@@ -63,3 +63,4 @@
 | 日期 | 阶段 | commit | 备注 |
 | --- | --- | --- | --- |
 | 2026-08-30 | P1 健壮性修复 | (见 git log) | 新增 app/utils/openai_client.py 共享客户端工厂；测试数 72→86 |
+| 2026-08-30 | P2 合规强化 | (见 git log) | structural_validator 落地；违规/警告分级防误报空转；测试数 86→109 |
