@@ -104,7 +104,8 @@ uv run python scripts/build_index.py
 ### 4. 启动服务
 
 ```bash
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8080
+# 默认仅监听本机；需局域网访问时改用 --host 0.0.0.0 并配置 AUTH_API_KEY
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
 ### 5. 使用 Web 界面

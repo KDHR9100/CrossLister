@@ -18,7 +18,8 @@ conda create -n crosslister python=3.11 -y
 conda activate crosslister
 cd CrossLister
 
-# 安装依赖（从 pyproject.toml / uv.lock 导出，或直接用方式二）
+# 安装依赖（依赖清单以 uv.lock 为唯一事实来源，从中导出后用 pip 装）
+pip install uv        # 仅首次需要
 uv export --format requirements-txt --no-hashes | pip install -r -
 ```
 
@@ -37,7 +38,8 @@ python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
 
-# 安装依赖
+# 安装依赖（依赖清单以 uv.lock 为唯一事实来源，从中导出后用 pip 装）
+pip install uv        # 仅首次需要
 uv export --format requirements-txt --no-hashes | pip install -r -
 ```
 
@@ -77,18 +79,22 @@ EMBEDDING_LOCAL_MODEL_PATH=/path/to/your/embedding/model
 conda activate crosslister   # Conda
 source .venv/bin/activate    # venv（Linux/macOS）
 
-# 启动服务
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+# 启动服务（默认仅监听本机 http://localhost:8080，个人使用推荐）
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 
 # 开发模式（支持热重载）
 # 注意：必须用 --reload-dir 限定只监控代码目录。
 # 因为 Chroma 向量库会在请求期间惰性写入 data/ 下的索引文件，
 # 若监控整个项目目录，会在请求进行中反复触发重启，导致请求被取消
 # （表现为 "Connection error." / CancelledError）。
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --reload-dir app --reload-dir static
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload --reload-dir app --reload-dir static
 
 # 使用 uv 时（无需手动激活环境）
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8080
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8080
+
+# 需要局域网其他设备访问时才改绑 0.0.0.0，并强烈建议同时在 .env 设置
+# AUTH_API_KEY（否则同网段任何人都能消耗你的模型额度）：
+#   python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 ### 4. 验证服务
