@@ -51,6 +51,18 @@ class LLMMode(str, Enum):
     MOCK = "mock"
 
 
+class VideoMode(str, Enum):
+    """Image-to-video generation mode.
+
+    api:  call the DashScope-style async video-synthesis endpoint on the
+          same MaaS gateway as the vision/LLM models.
+    mock: deterministic stub used for development and tests (no network).
+    """
+
+    API = "api"
+    MOCK = "mock"
+
+
 class Settings(BaseSettings):
     """Global application settings."""
 
@@ -96,6 +108,37 @@ class Settings(BaseSettings):
     # Per-product timeout (seconds). A single product that exceeds this is
     # marked as failed so it cannot block the rest of the batch forever.
     batch_product_timeout_s: float = 300.0
+    # Hard caps on one batch request. Without them a runaway client could
+    # submit thousands of multipart parts, exhausting memory/CPU during
+    # parsing long before any rate limit kicks in. 100+ images in one batch
+    # is comfortably inside these defaults.
+    batch_max_products: int = 200
+    batch_max_images: int = 1000
+
+    # -- Video generation (image-to-video) -------------------------------
+    # Side feature: turn the first product image into a short marketing
+    # video. Uses the DashScope-style async task API on the same gateway:
+    #   POST {video_api_base}/api/v1/services/aigc/video-generation/video-synthesis
+    #   GET  {video_api_base}/api/v1/tasks/{task_id}
+    # Note video_api_base is the gateway ROOT (no /compatible-mode suffix).
+    video_mode: VideoMode = VideoMode.MOCK
+    video_api_base: str = "https://token-plan.cn-beijing.maas.aliyuncs.com"
+    # Empty key falls back to vision_api_key so one credential serves all.
+    video_api_key: str = ""
+    video_model: str = "happyhorse-1.1-i2v"
+    video_duration_s: int = 5
+    video_resolution: str = "720P"
+    # Wall-clock budget per video covering create + poll + download.
+    video_timeout_s: float = 900.0
+    video_poll_interval_s: float = 5.0
+    # Videos are heavy: bound how many generate at once (separate from the
+    # listing batch semaphore so slow videos never block listing slots).
+    video_max_concurrency: int = 3
+    # Finished MP4s are downloaded here (remote URLs expire after 24h) and
+    # served by GET /api/v1/video/{filename}. Oldest files are pruned beyond
+    # this count to bound disk usage.
+    video_output_dir: Path = BASE_DIR / "data" / "videos"
+    video_max_output_files: int = 400
 
     # -- RAG -----------------------------------------------------------
     platform_rules_dir: Path = BASE_DIR / "data" / "platform_rules"

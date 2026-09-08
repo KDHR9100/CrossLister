@@ -8,10 +8,11 @@ import re
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agents.graph import generate_listing, stream_listing
@@ -21,12 +22,13 @@ from app.api.batch_import import (
     parse_csv,
     parse_excel,
 )
-from app.config import Settings, get_settings
+from app.config import Settings, VideoMode, get_settings
 from app.history import store as history_store
 from app.models.listing import ListingResponse, Platform
 from app.rag.indexer import build_index
-from app.utils.images import pillow_available
+from app.utils.images import pillow_available, preprocess_image
 from app.utils.logger import get_logger
+from app.video.client import VideoClient, VideoError
 
 logger = get_logger(__name__)
 
@@ -125,6 +127,14 @@ class BatchProductMeta(BaseModel):
         description="Optional extra info: JSON string or natural language text",
     )
     image_count: int = Field(ge=0, description="Number of images for this product")
+    generate_video: bool = Field(
+        default=False,
+        description="Also generate a marketing video from the first image",
+    )
+    video_prompt: str = Field(
+        default="",
+        description="Optional motion description for the generated video",
+    )
 
 
 class BatchProductResult(BaseModel):
@@ -238,6 +248,24 @@ def _parse_batch_request(
                 f"but {len(images)} were uploaded."
             ),
         )
+    # Hard caps so a runaway client cannot exhaust memory during multipart
+    # parsing. 100+ images per batch fits comfortably inside the defaults.
+    if len(metas) > settings.batch_max_products:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"At most {settings.batch_max_products} products per batch; "
+                f"got {len(metas)}. Split the batch or raise BATCH_MAX_PRODUCTS."
+            ),
+        )
+    if len(images) > settings.batch_max_images:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"At most {settings.batch_max_images} images per batch; "
+                f"got {len(images)}. Split the batch or raise BATCH_MAX_IMAGES."
+            ),
+        )
     grouped: list[list[UploadFile]] = []
     offset = 0
     for m in metas:
@@ -342,6 +370,60 @@ def _record_history(
     task.add_done_callback(_log_failure)
 
 
+def _history_copies(image_bytes: list[bytes], settings: Settings) -> list[bytes]:
+    """Compressed per-image copies retained for the post-batch history write.
+
+    Called right after upload validation so the RAW bytes (several MB per
+    photo) are dropped from memory immediately; a 100-product batch would
+    otherwise hold gigabytes until the whole batch finished. The history
+    store needs exactly these compressed JPEGs, so nothing is lost.
+    """
+    if not (settings.history_enabled and settings.history_save_images):
+        return []
+    return [
+        preprocess_image(
+            b, settings.vision_max_image_side, settings.vision_jpeg_quality
+        )
+        for b in image_bytes
+    ]
+
+
+async def _start_video_task(
+    image: bytes, prompt: str, semaphore: asyncio.Semaphore
+) -> asyncio.Task:
+    """Launch one bounded-concurrency video generation task.
+
+    The video pipeline is slow (1-3 min per clip) and must never occupy a
+    listing slot, so callers create this task *outside* the batch semaphore
+    and await it after the listing pipeline has finished. ``image`` should
+    already be a compressed JPEG copy (see ``_history_copies``) so pending
+    tasks don't pin the raw upload in memory.
+    """
+
+    async def _run() -> "object":
+        async with semaphore:
+            client = VideoClient()
+            return await client.generate(image, prompt)
+
+    return asyncio.create_task(_run())
+
+
+async def _await_video(
+    task: asyncio.Task | None, timeout_s: float
+) -> tuple[str | None, str | None]:
+    """Wait for a video task; return (url, error) instead of raising."""
+    if task is None:
+        return None, None
+    try:
+        async with asyncio.timeout(timeout_s):
+            result = await task
+        return result.url, None
+    except Exception as exc:  # noqa: BLE001 - video failure must not kill listings
+        if task is not None and not task.done():
+            task.cancel()
+        return None, sanitize_error(f"视频生成失败: {exc}")
+
+
 # --------------- Routes ---------------
 
 @router.get("/platforms", response_model=PlatformsResponse, tags=["meta"])
@@ -386,6 +468,16 @@ async def diagnostics() -> dict:
         "batch": {
             "max_concurrency": s.batch_max_concurrency,
             "product_timeout_s": s.batch_product_timeout_s,
+            "max_products": s.batch_max_products,
+            "max_images": s.batch_max_images,
+        },
+        "video": {
+            "mode": s.video_mode.value,
+            "model": s.video_model,
+            "duration_s": s.video_duration_s,
+            "resolution": s.video_resolution,
+            "timeout_s": s.video_timeout_s,
+            "max_concurrency": s.video_max_concurrency,
         },
         "limits": {
             "max_image_bytes": MAX_IMAGE_BYTES,
@@ -405,6 +497,12 @@ async def generate(
     extra_info: str | None = Form(
         default=None,
         description="Optional JSON object or natural language text with extra seller context",
+    ),
+    generate_video: bool = Form(
+        default=False, description="Also generate a video from the first image"
+    ),
+    video_prompt: str = Form(
+        default="", description="Optional motion description for the video"
     ),
 ) -> ListingResponse:
     """Generate a compliance-checked, localized listing from product images."""
@@ -471,6 +569,21 @@ async def generate(
             detail=sanitize_error(f"Listing generation failed: {exc}"),
         ) from exc
 
+    # Optional image-to-video side task. Runs after the listing so a video
+    # failure never breaks the text result; the URL/error fields carry the
+    # outcome to the caller and into history.
+    if generate_video and image_bytes:
+        video_client = VideoClient(settings)
+        try:
+            async with asyncio.timeout(settings.video_timeout_s):
+                video_result = await video_client.generate(
+                    image_bytes[0], video_prompt
+                )
+            result.video_url = video_result.url
+        except Exception as exc:  # noqa: BLE001 - listing already succeeded
+            logger.error("api.generate.video_failed", error=str(exc))
+            result.video_error = sanitize_error(f"视频生成失败: {exc}")
+
     # History: persisted only after generation succeeded; response is already
     # built, so the background write cannot affect it.
     _record_history(
@@ -487,7 +600,7 @@ async def generate(
                 "elapsed_ms": int((time.perf_counter() - t0) * 1000),
             }
         ],
-        {0: image_bytes},
+        {0: await asyncio.to_thread(_history_copies, image_bytes, settings)},
     )
     return result
 
@@ -518,60 +631,88 @@ async def batch_generate(
     metas, grouped = _parse_batch_request(products, images, settings)
 
     # Bound concurrent generations so we don't flood the remote LLM endpoint
-    # (which otherwise triggers rate limits / connection resets).
+    # (which otherwise triggers rate limits / connection resets). Videos use
+    # their own smaller semaphore — a 2-minute clip must never occupy a
+    # listing slot.
     max_concurrency = max(1, settings.batch_max_concurrency)
     sem = asyncio.Semaphore(max_concurrency)
+    video_sem = asyncio.Semaphore(max(1, settings.video_max_concurrency))
 
-    # Raw image bytes per product index, kept only for the post-generation
-    # history write (cold storage). Populated while validating uploads.
+    # Compressed image copies per product index, kept only for the
+    # post-generation history write (cold storage). Populated while validating
+    # uploads; the raw originals are dropped immediately afterwards.
     collected_images: dict[int, list[bytes]] = {}
 
     async def _process_one(
         item: BatchProductMeta, files: list[UploadFile]
     ) -> BatchProductResult:
-        async with sem:
-            t0 = time.perf_counter()
+        t0 = time.perf_counter()
 
-            def _elapsed() -> int:
-                return int((time.perf_counter() - t0) * 1000)
+        def _elapsed() -> int:
+            return int((time.perf_counter() - t0) * 1000)
+
+        video_task: asyncio.Task | None = None
+        try:
+            # Validate platform
+            try:
+                plat = Platform(item.platform)
+            except ValueError:
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error=f"Unsupported platform: {item.platform}",
+                    elapsed_ms=_elapsed(),
+                )
+
+            # Read and validate this product's images
+            if not files:
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error="At least one image is required.",
+                    elapsed_ms=_elapsed(),
+                )
+            if len(files) > settings.vision_max_images:
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error=f"At most {settings.vision_max_images} images are allowed.",
+                    elapsed_ms=_elapsed(),
+                )
 
             try:
-                # Validate platform
-                try:
-                    plat = Platform(item.platform)
-                except ValueError:
-                    return BatchProductResult(
-                        product_index=item.product_index,
-                        error=f"Unsupported platform: {item.platform}",
-                        elapsed_ms=_elapsed(),
-                    )
+                image_bytes = [await _read_and_validate(f) for f in files]
+            except Exception as exc:  # noqa: BLE001 - report per product
+                return BatchProductResult(
+                    product_index=item.product_index,
+                    error=sanitize_error(str(exc)),
+                    elapsed_ms=_elapsed(),
+                )
 
-                # Read and validate this product's images
-                if not files:
-                    return BatchProductResult(
-                        product_index=item.product_index,
-                        error="At least one image is required.",
-                        elapsed_ms=_elapsed(),
-                    )
-                if len(files) > settings.vision_max_images:
-                    return BatchProductResult(
-                        product_index=item.product_index,
-                        error=f"At most {settings.vision_max_images} images are allowed.",
-                        elapsed_ms=_elapsed(),
-                    )
+            # Compressed copies are what the history write needs; only these
+            # are retained until batch end. The raw bytes stay in the local
+            # variable below and are freed as soon as this product finishes.
+            copies = await asyncio.to_thread(_history_copies, image_bytes, settings)
+            collected_images[item.product_index] = copies
 
-                try:
-                    image_bytes = [await _read_and_validate(f) for f in files]
-                except Exception as exc:  # noqa: BLE001 - report per product
-                    return BatchProductResult(
-                        product_index=item.product_index,
-                        error=sanitize_error(str(exc)),
-                        elapsed_ms=_elapsed(),
-                    )
-                collected_images[item.product_index] = image_bytes
+            # Video input: a compressed copy so a pending video task never
+            # pins the raw upload in memory.
+            video_image = (
+                copies[0]
+                if copies
+                else await asyncio.to_thread(
+                    preprocess_image,
+                    image_bytes[0],
+                    settings.vision_max_image_side or 1280,
+                    max(settings.vision_jpeg_quality, 85),
+                )
+            )
+            if item.generate_video:
+                video_task = await _start_video_task(
+                    video_image, item.video_prompt, video_sem
+                )
+            del video_image
 
-                parsed_extra = _parse_extra_info(item.extra_info)
+            parsed_extra = _parse_extra_info(item.extra_info)
 
+            async with sem:
                 try:
                     result = await asyncio.wait_for(
                         generate_listing(
@@ -587,25 +728,41 @@ async def batch_generate(
                 except asyncio.TimeoutError:
                     return BatchProductResult(
                         product_index=item.product_index,
-                        error=f"生成超时（超过 {int(settings.batch_product_timeout_s)} 秒），请重试或减少图片数量。",
+                        error=(
+                            f"生成超时（超过 {int(settings.batch_product_timeout_s)} 秒），"
+                            f"请重试或减少图片数量。"
+                        ),
                         elapsed_ms=_elapsed(),
                     )
-                return BatchProductResult(
-                    product_index=item.product_index,
-                    listing=result,
-                    elapsed_ms=_elapsed(),
-                )
-            except Exception as exc:
-                logger.error(
-                    "api.batch_generate.product_failed",
-                    product_index=item.product_index,
-                    error=str(exc),
-                )
-                return BatchProductResult(
-                    product_index=item.product_index,
-                    error=sanitize_error(str(exc)),
-                    elapsed_ms=_elapsed(),
-                )
+            del image_bytes
+
+            # Listing finished; collect the (possibly still running) video.
+            video_url, video_error = await _await_video(
+                video_task, settings.video_timeout_s
+            )
+            if video_url:
+                result.video_url = video_url
+            if video_error:
+                result.video_error = video_error
+
+            return BatchProductResult(
+                product_index=item.product_index,
+                listing=result,
+                elapsed_ms=_elapsed(),
+            )
+        except Exception as exc:
+            logger.error(
+                "api.batch_generate.product_failed",
+                product_index=item.product_index,
+                error=str(exc),
+            )
+            if video_task is not None and not video_task.done():
+                video_task.cancel()
+            return BatchProductResult(
+                product_index=item.product_index,
+                error=sanitize_error(str(exc)),
+                elapsed_ms=_elapsed(),
+            )
 
     logger.info(
         "api.batch_generate.request",
@@ -677,15 +834,50 @@ async def batch_generate_stream(
 
     max_concurrency = max(1, settings.batch_max_concurrency)
     semaphore = asyncio.Semaphore(max_concurrency)
+    video_semaphore = asyncio.Semaphore(max(1, settings.video_max_concurrency))
     queue: asyncio.Queue = asyncio.Queue()
     collected_images: dict[int, list[bytes]] = {}
+
+    async def _run_video(idx: int, image: bytes, prompt: str) -> None:
+        """Generate one video, emitting ``video_done`` whatever happens.
+
+        Runs under its own semaphore: slow clips (1-3 min) must not occupy
+        listing slots, and the remote video endpoint cannot take a storm of
+        parallel jobs.
+        """
+        try:
+            async with video_semaphore:
+                async with asyncio.timeout(settings.video_timeout_s):
+                    result = await VideoClient(settings).generate(image, prompt)
+            await queue.put(
+                {
+                    "type": "video_done",
+                    "product_index": idx,
+                    "video_url": result.url,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - video never kills the stream
+            logger.error(
+                "api.batch_generate_stream.video_failed",
+                product_index=idx,
+                error=str(exc),
+            )
+            await queue.put(
+                {
+                    "type": "video_done",
+                    "product_index": idx,
+                    "error": sanitize_error(f"视频生成失败: {exc}"),
+                }
+            )
 
     async def _produce(idx: int, item: BatchProductMeta, files: list[UploadFile]) -> None:
         """Run one product in its own task, pushing events into the queue.
 
         Every terminal path emits exactly one ``product_done`` event, and the
         ``finally`` block pushes a sentinel so the consumer knows this
-        producer finished.
+        producer finished. Listing and (optional) video run side by side:
+        ``product_done`` carries the listing as soon as it is ready, and
+        ``video_done`` follows later without holding anything up.
         """
         started = time.perf_counter()
 
@@ -698,38 +890,61 @@ async def batch_generate_stream(
                 "elapsed_ms": int((time.perf_counter() - started) * 1000),
             }
 
+        video_task: asyncio.Task | None = None
         try:
+            try:
+                plat = Platform(item.platform)
+            except ValueError:
+                await queue.put(
+                    _done_payload(error=f"Unsupported platform: {item.platform}")
+                )
+                return
+
+            if not files:
+                await queue.put(
+                    _done_payload(error="At least one image is required.")
+                )
+                return
+            if len(files) > settings.vision_max_images:
+                await queue.put(
+                    _done_payload(
+                        error=f"At most {settings.vision_max_images} images are allowed."
+                    )
+                )
+                return
+
+            try:
+                image_bytes = [await _read_and_validate(f) for f in files]
+            except Exception as exc:  # noqa: BLE001 - report per product
+                await queue.put(_done_payload(error=sanitize_error(str(exc))))
+                return
+
+            # Compressed copies for history; only these survive until the
+            # whole batch finishes (raw originals are megabytes each).
+            copies = await asyncio.to_thread(_history_copies, image_bytes, settings)
+            collected_images[idx] = copies
+
+            # Kick the video off before the listing semaphore: it runs in
+            # parallel and reports its own ``video_done`` event.
+            if item.generate_video and image_bytes:
+                video_image = (
+                    copies[0]
+                    if copies
+                    else await asyncio.to_thread(
+                        preprocess_image,
+                        image_bytes[0],
+                        settings.vision_max_image_side or 1280,
+                        max(settings.vision_jpeg_quality, 85),
+                    )
+                )
+                await queue.put({"type": "video_start", "product_index": idx})
+                video_task = asyncio.create_task(
+                    _run_video(idx, video_image, item.video_prompt)
+                )
+
+            await queue.put({"type": "product_start", "product_index": idx})
+
             async with semaphore:
-                try:
-                    plat = Platform(item.platform)
-                except ValueError:
-                    await queue.put(
-                        _done_payload(error=f"Unsupported platform: {item.platform}")
-                    )
-                    return
-
-                if not files:
-                    await queue.put(
-                        _done_payload(error="At least one image is required.")
-                    )
-                    return
-                if len(files) > settings.vision_max_images:
-                    await queue.put(
-                        _done_payload(
-                            error=f"At most {settings.vision_max_images} images are allowed."
-                        )
-                    )
-                    return
-
-                try:
-                    image_bytes = [await _read_and_validate(f) for f in files]
-                except Exception as exc:  # noqa: BLE001 - report per product
-                    await queue.put(_done_payload(error=sanitize_error(str(exc))))
-                    return
-                collected_images[idx] = image_bytes
-
-                await queue.put({"type": "product_start", "product_index": idx})
-
                 try:
                     async with asyncio.timeout(settings.batch_product_timeout_s):
                         async for event in stream_listing(
@@ -758,6 +973,15 @@ async def batch_generate_stream(
                             )
                         )
                     )
+            del image_bytes
+
+            # The listing is out; only the video may still be running. Its
+            # own timeout applies (video_done arrives late by design).
+            if video_task is not None:
+                try:
+                    await video_task
+                except Exception:  # noqa: BLE001 - _run_video already reported
+                    pass
         except Exception as exc:  # noqa: BLE001 - one product must not kill the stream
             logger.error(
                 "api.batch_generate_stream.product_failed",
@@ -766,6 +990,9 @@ async def batch_generate_stream(
             )
             await queue.put(_done_payload(error=sanitize_error(str(exc))))
         finally:
+            # Covers client disconnects: stop a still-running video job.
+            if video_task is not None and not video_task.done():
+                video_task.cancel()
             await queue.put(None)  # sentinel: producer finished
 
     async def _event_stream() -> AsyncIterator[str]:
@@ -795,6 +1022,19 @@ async def batch_generate_stream(
                             "elapsed_ms": event.get("elapsed_ms", 0),
                         }
                     )
+                elif event.get("type") == "video_done":
+                    # Videos finish after their listing; back-fill the URL (or
+                    # error) into the already-collected history payload so the
+                    # saved record points at the local file.
+                    for payload in history_payloads:
+                        if payload["product_index"] == event.get("product_index"):
+                            listing = payload.get("listing")
+                            if isinstance(listing, dict):
+                                if event.get("video_url"):
+                                    listing["video_url"] = event["video_url"]
+                                if event.get("error"):
+                                    listing["video_error"] = event["error"]
+                            break
                 yield _sse(event)
             # History (cold storage): fire-and-forget after all products end.
             history_payloads.sort(key=lambda p: p["product_index"])
@@ -929,6 +1169,31 @@ async def parse_import_file(
             for p in result.products
         ],
     )
+
+
+# --------------- Generated video files ---------------
+
+# Video filenames produced by app.video.client are "<32 hex chars>.mp4".
+# Matching this strictly means a crafted path can never traverse outside
+# the video output directory.
+_VIDEO_FILE_RE = re.compile(r"^[0-9a-f]{32}\.mp4$")
+
+
+@router.get("/video/{filename}", tags=["video"])
+async def get_video(filename: str) -> FileResponse:
+    """Serve a locally stored generated MP4.
+
+    Videos are downloaded from the gateway right after generation because the
+    remote OSS URLs expire after 24 hours; this route is the stable URL that
+    listings, history records, and the frontend reference.
+    """
+    settings = get_settings()
+    if not _VIDEO_FILE_RE.match(filename):
+        raise HTTPException(status_code=400, detail="Invalid video filename.")
+    path = Path(settings.video_output_dir) / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Video not found.")
+    return FileResponse(path, media_type="video/mp4", filename=filename)
 
 
 @router.post("/rag/rebuild", tags=["rag"])

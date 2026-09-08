@@ -14,6 +14,9 @@
 
 - **多模态理解**：用 qwen3.6-flash 从 1–20 张商品图中提取类目、颜色、材质、卖点与使用场景。
 - **多产品并发处理**：支持同时录入多个产品，批量生成 Listing，所有产品并发处理。
+- **AI 商品视频（图生视频）**：可为每个产品一键开启，用第 1 张商品图 +
+  可选提示词生成短视频营销素材（`happyhorse-1.1-i2v`），与 Listing 并行生成、
+  结果页直接播放，MP4 本地留存可下载。
 - **批量导入**：通过 CSV/Excel 模板文件一次性导入多个产品信息，自动校验并提示错误。
 - **生成历史记录（冷存储）**：每次生成完成后异步落盘（文字 + 压缩图片，可配置），
   纯文件系统存储、与主流程完全解耦，前端可随时回看历史结果；超限自动清理最旧记录。
@@ -197,6 +200,7 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 | --- | --- | --- | --- |
 | 视觉理解 | `qwen3.6-flash` | `VISION_MODE` | `VISION_API_BASE` / `VISION_API_KEY` |
 | 文本生成 / 合规 / 翻译 | `qwen3.6-flash` | `LLM_MODE` | `LLM_API_BASE` / `LLM_API_KEY` |
+| 图生视频 | `happyhorse-1.1-i2v` | `VIDEO_MODE` | `VIDEO_API_BASE` / `VIDEO_API_KEY`（key 留空复用 `VISION_API_KEY`） |
 | 向量嵌入 | `Qwen/Qwen3-Embedding-0.6B` | `EMBEDDING_MODE` | `EMBEDDING_API_BASE` / `EMBEDDING_API_KEY` |
 
 每种模式的取值：
@@ -214,9 +218,20 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 | 配置 | 默认 | 说明 |
 | --- | --- | --- |
 | `LLM_MAX_OUTPUT_TOKENS` | `2048` | 每次 LLM 调用的生成 token 上限，防失控生成 |
+| `BATCH_MAX_PRODUCTS` / `BATCH_MAX_IMAGES` | `200` / `1000` | 单次批量请求的产品数 / 图片数硬上限（内存保护） |
+| `VIDEO_DURATION_S` / `VIDEO_RESOLUTION` | `5` / `720P` | 生成视频的时长与分辨率 |
+| `VIDEO_MAX_CONCURRENCY` | `3` | 视频生成并发数；与 Listing 并行、互不占用槽位 |
 | `RAG_MIN_SCORE` | `0.0` | 检索相似度下限，低于该值的规则不进入 prompt |
 | `RAG_AUTOBUILD_ON_STARTUP` | `false` | 启动时发现规则索引缺失/为空则后台自动重建 |
 | `AUTH_API_KEY` | 空 | 设置后所有 `/api/*`（除 health）要求 `X-API-Key` 请求头 |
+
+> **图生视频说明**：视频走的是同一网关上的 DashScope 异步任务接口
+> （`{VIDEO_API_BASE}/api/v1/services/aigc/video-generation/video-synthesis`），
+> 注意 `VIDEO_API_BASE` 是网关根地址、**不带** `/compatible-mode/v1` 后缀。
+> 输入图以 base64 data URI 上传，无需公网图片地址；生成的 MP4 会在完成后立即
+> 下载到本地（`data/videos/`，网关原始链接 24 小时过期），通过
+> `GET /api/v1/video/{filename}` 提供稳定访问。并发与容量详见
+> `docs/concurrency-review.md`。
 
 ---
 
@@ -238,7 +253,8 @@ curl -X POST http://localhost:8080/api/v1/import/parse \
 | GET | `/api/v1/languages` | 返回支持的 12 种目标语言 |
 | POST | `/api/v1/listing/generate` | 单个产品：multipart 上传图片 + 表单字段，生成合规 Listing |
 | POST | `/api/v1/listing/batch_generate` | 多产品并发：multipart（products JSON 字段 + 按产品顺序的 images 文件域） |
-| POST | `/api/v1/listing/batch_generate_stream` | 同 batch_generate，但以 SSE 流式推送 `product_start` / `node` / `product_done` / `done` 事件，前端展示真实进度 |
+| POST | `/api/v1/listing/batch_generate_stream` | 同 batch_generate，但以 SSE 流式推送 `product_start` / `node` / `video_start` / `product_done` / `video_done` / `done` 事件，前端展示真实进度 |
+| GET | `/api/v1/video/{filename}` | 读取本地存储的生成视频 MP4（网关链接 24h 过期，本地是持久副本） |
 | GET | `/api/v1/import/template` | 下载批量导入 CSV 模板 |
 | POST | `/api/v1/import/parse` | 解析 CSV/Excel 文件，返回校验结果 |
 | POST | `/api/v1/rag/rebuild` | 重建平台规则向量索引 |

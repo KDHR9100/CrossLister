@@ -200,6 +200,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .footer a{color:var(--primary);text-decoration:none}
 .footer a:hover{text-decoration:underline}
 .zh-label{display:inline-block;font-size:.72rem;color:var(--primary);background:rgba(108,92,231,.08);padding:.1rem .4rem;border-radius:4px;margin-bottom:.2rem;font-weight:500}
+/* AI video toggle & player */
+.video-toggle-row{display:flex;align-items:center;gap:.6rem}
+.switch{position:relative;display:inline-block;width:44px;height:24px;flex:none}
+.switch input{opacity:0;width:0;height:0}
+.switch .slider{position:absolute;cursor:pointer;inset:0;background:#cbd5e1;border-radius:24px;transition:.2s}
+.switch .slider::before{content:'';position:absolute;height:18px;width:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.switch input:checked+.slider{background:var(--primary)}
+.switch input:checked+.slider::before{transform:translateX(20px)}
+.video-toggle-text{font-size:.82rem;color:var(--text-secondary)}
+.video-toggle-text.on{color:var(--primary);font-weight:600}
+.result-video{width:100%;max-width:640px;border-radius:8px;border:1px solid var(--border);background:#000;display:block}
+.video-warning{font-size:.84rem;padding:.5rem .8rem;border-radius:8px;background:rgba(245,159,11,.06);border-left:3px solid var(--warning);color:#92400e;line-height:1.5}
 @media(max-width:960px){.main{grid-template-columns:1fr}.pipeline{gap:.2rem;padding:1rem .5rem}.pipeline-step{font-size:.78rem;padding:.4rem .5rem}.pipeline-arrow{font-size:.9rem}.modal{max-width:100%}}
 @media(max-width:600px){.header h1{font-size:1.5rem}.main{padding:1rem;gap:1rem}.visual-grid{grid-template-columns:1fr 1fr}.metadata-bar{flex-direction:column;gap:.5rem}}
 </style>
@@ -474,7 +486,9 @@ function createEmptyProduct() {
     platform: 'amazon',
     targetLang: 'en',
     extraInfo: '',
-    extraMode: 'natural'
+    extraMode: 'natural',
+    generateVideo: false,
+    videoPrompt: ''
   };
 }
 
@@ -584,6 +598,23 @@ function renderProductForm() {
         >${escapeHtml(p.extraInfo)}</textarea>
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">AI 商品视频（图生视频）</label>
+      <div class="video-toggle-row">
+        <label class="switch" title="开启后将用第 1 张商品图片生成短视频">
+          <input type="checkbox" id="videoToggle${idx}" ${p.generateVideo ? 'checked' : ''}
+            onchange="onVideoToggle(${idx}, this.checked)">
+          <span class="slider"></span>
+        </label>
+        <span class="video-toggle-text${p.generateVideo ? ' on' : ''}" id="videoToggleText${idx}">
+          ${p.generateVideo ? '已开启：用第 1 张图片生成短视频' : '不生成视频'}
+        </span>
+      </div>
+      <textarea class="form-textarea" id="videoPromptInput${idx}" style="margin-top:.5rem;${p.generateVideo ? '' : 'display:none'}"
+        placeholder="视频提示词（可选）：描述画面如何运动，例如「产品缓慢旋转，柔和光线扫过，背景虚化」。留空则由 AI 自动构思动效。"
+        oninput="products[${idx}].videoPrompt=this.value"
+      >${escapeHtml(p.videoPrompt)}</textarea>
+    </div>
   `;
 
   setupUploadHandlers(idx);
@@ -625,6 +656,19 @@ function setExtraMode(idx, mode) {
   saveCurrentForm();
   products[idx].extraMode = mode;
   renderProductForm();
+}
+
+// Toggle AI video generation for one product without a full re-render, so
+// the video prompt typed so far is never lost.
+function onVideoToggle(idx, checked) {
+  products[idx].generateVideo = checked;
+  const textEl = document.getElementById(`videoToggleText${idx}`);
+  const promptEl = document.getElementById(`videoPromptInput${idx}`);
+  if (textEl) {
+    textEl.textContent = checked ? '已开启：用第 1 张图片生成短视频' : '不生成视频';
+    textEl.classList.toggle('on', checked);
+  }
+  if (promptEl) promptEl.style.display = checked ? '' : 'none';
 }
 
 // ====== File Upload ======
@@ -700,11 +744,15 @@ function saveCurrentForm() {
   const catEl = document.getElementById(`categoryInput${idx}`);
   const langEl = document.getElementById(`langSelect${idx}`);
   const extraEl = document.getElementById(`extraInput${idx}`);
+  const videoToggleEl = document.getElementById(`videoToggle${idx}`);
+  const videoPromptEl = document.getElementById(`videoPromptInput${idx}`);
   if (catEl) p.category = catEl.value.trim();
   const platEl = document.querySelector(`input[name="platform${idx}"]:checked`);
   if (platEl) p.platform = platEl.value;
   if (langEl) p.targetLang = langEl.value;
   if (extraEl) p.extraInfo = extraEl.value;
+  if (videoToggleEl) p.generateVideo = videoToggleEl.checked;
+  if (videoPromptEl) p.videoPrompt = videoPromptEl.value;
 }
 
 // ====== Pipeline Step Animation ======
@@ -761,10 +809,16 @@ async function handleGenerate() {
     }
   }, 1000);
 
-  // Safety-net timeout for the whole batch request (15 minutes). Individual
-  // products already have a server-side timeout; this only guards the HTTP call.
+  // Safety-net timeout for the whole batch request. Individual products
+  // already have a server-side timeout; this only guards the HTTP call.
+  // Videos are generated 3 at a time (~2-4 min each), so batches that asked
+  // for videos get a proportionally longer budget.
+  const videoCount = products.filter(p => p.generateVideo).length;
+  const timeoutMin = videoCount > 0
+    ? Math.min(240, Math.max(15, Math.ceil(videoCount / 3) * 4 + 10))
+    : 15;
   const controller = new AbortController();
-  const fetchTimeout = setTimeout(() => controller.abort(), 15 * 60 * 1000);
+  const fetchTimeout = setTimeout(() => controller.abort(), timeoutMin * 60 * 1000);
 
   try {
     // Multipart upload: metadata JSON in the 'products' field, all images as
@@ -779,7 +833,9 @@ async function handleGenerate() {
         platform: p.platform,
         target_lang: p.targetLang,
         extra_info: p.extraInfo || null,
-        image_count: p.images.length
+        image_count: p.images.length,
+        generate_video: !!p.generateVideo,
+        video_prompt: p.videoPrompt || ''
       });
       for (const f of p.images) fd.append('images', f, f.name);
     }
@@ -801,6 +857,9 @@ async function handleGenerate() {
 
     allResults = products.map(() => null); // null = still generating
     activeResultTab = 0;
+    // video_done can arrive before its product_done (video sometimes beats
+    // the listing pipeline); stash such events and merge them on arrival.
+    const pendingVideos = {};
 
     const statusEl = document.getElementById('streamStatus');
     const nodeSteps = { vision: 1, rag: 2, generate: 3, guardrails: 4, translate: 5 };
@@ -822,6 +881,18 @@ async function handleGenerate() {
           : '第 ' + (info.attempts || 1) + ' 次审核未通过（' + (info.violations || 0) + ' 项违规），重写中…';
         else if (ev.node === 'translate') detail = '生成中文翻译';
         statusEl.textContent = '产品 ' + (ev.product_index + 1) + '：' + detail;
+      } else if (ev.type === 'video_start') {
+        statusEl.textContent = '产品 ' + (ev.product_index + 1) + '：视频生成中（约 1-3 分钟，与 Listing 并行）…';
+      } else if (ev.type === 'video_done') {
+        const r = allResults[ev.product_index];
+        if (r && r.listing) {
+          if (ev.video_url) r.listing.video_url = ev.video_url;
+          if (ev.error) r.listing.video_error = ev.error;
+          renderBatchResults(allResults);
+        } else {
+          pendingVideos[ev.product_index] = ev;
+          if (r) renderBatchResults(allResults);
+        }
       } else if (ev.type === 'product_done') {
         allResults[ev.product_index] = {
           product_index: ev.product_index,
@@ -829,6 +900,12 @@ async function handleGenerate() {
           error: ev.error,
           elapsed_ms: ev.elapsed_ms || 0
         };
+        const pv = pendingVideos[ev.product_index];
+        if (pv && ev.listing) {
+          if (pv.video_url) ev.listing.video_url = pv.video_url;
+          if (pv.error) ev.listing.video_error = pv.error;
+          delete pendingVideos[ev.product_index];
+        }
         activeResultTab = ev.product_index;
         renderBatchResults(allResults);
       } else if (ev.type === 'done') {
@@ -871,7 +948,7 @@ async function handleGenerate() {
     clearInterval(timer);
     clearTimeout(fetchTimeout);
     const msg = err.name === 'AbortError'
-      ? '请求超时（超过 15 分钟）。请减少产品数量或图片数量后重试。'
+      ? '请求超时（超过 ' + timeoutMin + ' 分钟）。请减少产品数量、图片数量或关闭视频生成后重试。'
       : err.message;
     rp.innerHTML = '<div class="error-msg"><strong>生成失败：</strong>' + escapeHtml(msg) + '</div>';
   } finally {
@@ -937,6 +1014,8 @@ function renderBatchSummary(results) {
   h += '<div class="summary-item">成功：<span class="ok">' + okCount + '</span></div>';
   if (pendingCount > 0) h += '<div class="summary-item">生成中：<span>' + pendingCount + '</span></div>';
   if (failCount > 0) h += '<div class="summary-item">失败：<span class="fail">' + failCount + '</span></div>';
+  const videoCount = results.filter(r => r && r.listing && r.listing.video_url).length;
+  if (videoCount > 0) h += '<div class="summary-item">视频：<span class="ok">' + videoCount + '</span></div>';
   if (totalTokens > 0) h += '<div class="summary-item">Token 总消耗：<span>' + totalTokens.toLocaleString() + '</span></div>';
   if (totalElapsed > 0) h += '<div class="summary-item">累计耗时：<span>' + formatDuration(totalElapsed) + '</span></div>';
   h += '</div>';
@@ -961,6 +1040,17 @@ function renderSingleResult(data) {
       h += '<div class="zh-label">中文翻译</div>';
       h += '<div class="result-title-zh">' + escapeHtml(data.title_zh) + '</div>';
     }
+    h += '</div>';
+  }
+
+  if (data.video_url) {
+    h += '<div class="result-section"><h3><span class="dot"></span>商品视频（AI 生成）</h3>';
+    h += '<video class="result-video" controls preload="metadata" src="' + escapeAttr(data.video_url) + '"></video>';
+    h += '<div class="meta-item" style="margin-top:.4rem">提示：视频为本地副本，可右键另存；网关原始链接 24 小时后过期。</div>';
+    h += '</div>';
+  } else if (data.video_error) {
+    h += '<div class="result-section"><h3><span class="dot"></span>商品视频（AI 生成）</h3>';
+    h += '<div class="video-warning">' + escapeHtml(data.video_error) + '</div>';
     h += '</div>';
   }
 
@@ -1233,7 +1323,9 @@ function confirmImport() {
       platform: p.platform,
       targetLang: p.target_lang,
       extraInfo: p.extra_info || '',
-      extraMode: isJson(p.extra_info) ? 'json' : 'natural'
+      extraMode: isJson(p.extra_info) ? 'json' : 'natural',
+      generateVideo: false,
+      videoPrompt: ''
     });
     importedCount++;
   });

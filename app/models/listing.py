@@ -79,3 +79,12 @@ class ListingResponse(BaseModel):
     title_zh: str = ""
     bullet_points_zh: list[str] = Field(default_factory=list)
     description_zh: str = ""
+    # Optional image-to-video side feature: URL serves the local MP4 copy
+    # (GET /api/v1/video/{filename}); populated only when the caller asked
+    # for a video and it succeeded. A failure never blocks the listing.
+    video_url: str | None = Field(
+        default=None, description="Serving URL of the generated product video"
+    )
+    video_error: str | None = Field(
+        default=None, description="Why video generation failed, if it did"
+    )

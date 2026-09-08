@@ -71,6 +71,11 @@ LLM_API_BASE=https://your-api-endpoint/v1
 LLM_API_KEY=your-api-key
 LLM_MODEL=qwen3.6-flash
 
+# 图生视频（可选，在网页上按产品开启；key 留空则复用 VISION_API_KEY）
+VIDEO_MODE=api
+VIDEO_API_BASE=https://your-gateway-root   # 注意：网关根地址，不带 /compatible-mode/v1
+VIDEO_MODEL=happyhorse-1.1-i2v
+
 # 嵌入模型（本地）
 EMBEDDING_MODE=local
 EMBEDDING_LOCAL_MODEL_PATH=/path/to/your/embedding/model
